@@ -15,8 +15,96 @@ limitations under the License.
 
 #include "tensorflow/core/kernels/data/dataset_test_base.h"
 
+#include "tensorflow/core/common_runtime/executor.h"
+#include "tensorflow/core/framework/cancellation.h"
+#include "tensorflow/core/framework/versions.pb.h"
+#include "tensorflow/core/lib/io/record_writer.h"
+
 namespace tensorflow {
 namespace data {
+
+string ToString(CompressionType compression_type) {
+  switch (compression_type) {
+    case CompressionType::ZLIB:
+      return "ZLIB";
+    case CompressionType::GZIP:
+      return "GZIP";
+    case CompressionType::RAW:
+      return "RAW";
+    case CompressionType::UNCOMPRESSED:
+      return "";
+  }
+}
+
+io::ZlibCompressionOptions GetZlibCompressionOptions(
+    CompressionType compression_type) {
+  switch (compression_type) {
+    case CompressionType::ZLIB:
+      return io::ZlibCompressionOptions::DEFAULT();
+    case CompressionType::GZIP:
+      return io::ZlibCompressionOptions::GZIP();
+    case CompressionType::RAW:
+      return io::ZlibCompressionOptions::RAW();
+    case CompressionType::UNCOMPRESSED:
+      LOG(WARNING) << "ZlibCompressionOptions does not have an option for "
+                   << ToString(compression_type);
+      return io::ZlibCompressionOptions::DEFAULT();
+  }
+}
+
+Status WriteDataToFile(const string& filename, const char* data) {
+  return WriteDataToFile(filename, data, CompressionParams());
+}
+
+Status WriteDataToFile(const string& filename, const char* data,
+                       const CompressionParams& params) {
+  Env* env = Env::Default();
+  std::unique_ptr<WritableFile> file_writer;
+  TF_RETURN_IF_ERROR(env->NewWritableFile(filename, &file_writer));
+  if (params.compression_type == CompressionType::UNCOMPRESSED) {
+    TF_RETURN_IF_ERROR(file_writer->Append(data));
+  } else if (params.compression_type == CompressionType::ZLIB ||
+             params.compression_type == CompressionType::GZIP ||
+             params.compression_type == CompressionType::RAW) {
+    auto zlib_compression_options =
+        GetZlibCompressionOptions(params.compression_type);
+    io::ZlibOutputBuffer out(file_writer.get(), params.input_buffer_size,
+                             params.output_buffer_size,
+                             zlib_compression_options);
+    TF_RETURN_IF_ERROR(out.Init());
+    TF_RETURN_IF_ERROR(out.Append(data));
+    TF_RETURN_IF_ERROR(out.Flush());
+    TF_RETURN_IF_ERROR(out.Close());
+  } else {
+    return tensorflow::errors::InvalidArgument(
+        "Unsupported compression_type: ", ToString(params.compression_type));
+  }
+
+  TF_RETURN_IF_ERROR(file_writer->Flush());
+  TF_RETURN_IF_ERROR(file_writer->Close());
+
+  return Status::OK();
+}
+
+Status WriteDataToTFRecordFile(const string& filename,
+                               const std::vector<absl::string_view>& records,
+                               const CompressionParams& params) {
+  Env* env = Env::Default();
+  std::unique_ptr<WritableFile> file_writer;
+  TF_RETURN_IF_ERROR(env->NewWritableFile(filename, &file_writer));
+  auto options = io::RecordWriterOptions::CreateRecordWriterOptions(
+      ToString(params.compression_type));
+  options.zlib_options.input_buffer_size = params.input_buffer_size;
+  io::RecordWriter record_writer(file_writer.get(), options);
+  for (const auto& record : records) {
+    TF_RETURN_IF_ERROR(record_writer.WriteRecord(record));
+  }
+  TF_RETURN_IF_ERROR(record_writer.Flush());
+  TF_RETURN_IF_ERROR(record_writer.Close());
+  TF_RETURN_IF_ERROR(file_writer->Flush());
+  TF_RETURN_IF_ERROR(file_writer->Close());
+  return Status::OK();
+}
 
 template <typename T>
 Status IsEqual(const Tensor& t1, const Tensor& t2) {
@@ -53,7 +141,9 @@ Status DatasetOpsTestBase::ExpectEqual(const Tensor& a, const Tensor& b) {
     TF_RETURN_IF_ERROR(IsEqual<DT>(a, b)); \
     break;
     TF_CALL_NUMBER_TYPES(CASE);
-    TF_CALL_string(CASE);
+    TF_CALL_tstring(CASE);
+    TF_CALL_uint32(CASE);
+    TF_CALL_uint64(CASE);
     // TODO(feihugis): figure out how to support variant tensors.
 #undef CASE
     default:
@@ -184,6 +274,45 @@ Status DatasetOpsTestBase::CreateTensorSliceDataset(
   return Status::OK();
 }
 
+Status DatasetOpsTestBase::MakeRangeDataset(
+    const Tensor& start, const Tensor& stop, const Tensor& step,
+    const DataTypeVector& output_types,
+    const std::vector<PartialTensorShape>& output_shapes,
+    Tensor* range_dataset) {
+  GraphConstructorOptions graph_opts;
+  graph_opts.allow_internal_ops = true;
+  graph_opts.expect_device_spec = false;
+  TF_RETURN_IF_ERROR(
+      RunFunction(test::function::MakeRangeDataset(),
+                  /*attrs*/
+                  {{RangeDatasetOp::kOutputTypes, output_types},
+                   {RangeDatasetOp::kOutputShapes, output_shapes}},
+                  /*inputs*/ {start, stop, step}, graph_opts,
+                  /*rets*/ {range_dataset}));
+  return Status::OK();
+}
+
+// Create a `TakeDataset` dataset as a variant tensor.
+Status DatasetOpsTestBase::MakeTakeDataset(
+    const Tensor& input_dataset, int64 count,
+    const DataTypeVector& output_types,
+    const std::vector<PartialTensorShape>& output_shapes,
+    Tensor* take_dataset) {
+  GraphConstructorOptions graph_opts;
+  graph_opts.allow_internal_ops = true;
+  graph_opts.expect_device_spec = false;
+
+  Tensor count_tensor = CreateTensor<int64>(TensorShape({}), {count});
+  TF_RETURN_IF_ERROR(
+      RunFunction(test::function::MakeTakeDataset(),
+                  /*attrs*/
+                  {{TakeDatasetOp::kOutputTypes, output_types},
+                   {TakeDatasetOp::kOutputShapes, output_shapes}},
+                  /*inputs*/ {input_dataset, count_tensor}, graph_opts,
+                  /*rets*/ {take_dataset}));
+  return Status::OK();
+}
+
 Status DatasetOpsTestBase::CreateOpKernel(
     const NodeDef& node_def, std::unique_ptr<OpKernel>* op_kernel) {
   OpKernel* kernel;
@@ -191,6 +320,16 @@ Status DatasetOpsTestBase::CreateOpKernel(
                                                 allocator_, flr_, node_def,
                                                 TF_GRAPH_DEF_VERSION, &kernel));
   op_kernel->reset(kernel);
+  return Status::OK();
+}
+
+Status DatasetOpsTestBase::CreateDatasetContext(
+    OpKernel* const dateset_kernel,
+    gtl::InlinedVector<TensorValue, 4>* const inputs,
+    std::unique_ptr<OpKernelContext>* dataset_context) {
+  TF_RETURN_IF_ERROR(CheckOpKernelInput(*dateset_kernel, *inputs));
+  TF_RETURN_IF_ERROR(
+      CreateOpKernelContext(dateset_kernel, inputs, dataset_context));
   return Status::OK();
 }
 
@@ -220,6 +359,7 @@ Status DatasetOpsTestBase::CreateIteratorContext(
   params.resource_mgr = op_context->resource_manager();
   function_handle_cache_ = absl::make_unique<FunctionHandleCache>(flr_);
   params.function_handle_cache = function_handle_cache_.get();
+  params.cancellation_manager = cancellation_manager_.get();
   *iterator_context = absl::make_unique<IteratorContext>(params);
   return Status::OK();
 }
@@ -255,7 +395,7 @@ Status DatasetOpsTestBase::InitFunctionLibraryRuntime(
   std::vector<std::unique_ptr<Device>> devices;
   TF_RETURN_IF_ERROR(DeviceFactory::AddDevices(
       options, "/job:localhost/replica:0/task:0", &devices));
-  device_mgr_ = absl::make_unique<DeviceMgr>(std::move(devices));
+  device_mgr_ = absl::make_unique<StaticDeviceMgr>(std::move(devices));
   resource_mgr_ = absl::make_unique<ResourceMgr>("default_container");
 
   FunctionDefLibrary proto;
@@ -284,25 +424,84 @@ Status DatasetOpsTestBase::RunOpKernel(OpKernel* op_kernel,
   return context->status();
 }
 
+Status DatasetOpsTestBase::RunFunction(
+    const FunctionDef& fdef, test::function::Attrs attrs,
+    const std::vector<Tensor>& args,
+    const GraphConstructorOptions& graph_options, std::vector<Tensor*> rets) {
+  std::unique_ptr<Executor> exec;
+  InstantiationResult result;
+  auto GetOpSig = [](const string& op, const OpDef** sig) {
+    return OpRegistry::Global()->LookUpOpDef(op, sig);
+  };
+  TF_RETURN_IF_ERROR(InstantiateFunction(fdef, attrs, GetOpSig, &result));
+
+  DataTypeVector arg_types = result.arg_types;
+  DataTypeVector ret_types = result.ret_types;
+
+  std::unique_ptr<Graph> g(new Graph(OpRegistry::Global()));
+  TF_RETURN_IF_ERROR(
+      ConvertNodeDefsToGraph(graph_options, result.nodes, g.get()));
+
+  const int version = g->versions().producer();
+  LocalExecutorParams params;
+  params.function_library = flr_;
+  params.device = device_.get();
+  params.create_kernel = [this, version](const NodeDef& ndef,
+                                         OpKernel** kernel) {
+    return CreateNonCachedKernel(device_.get(), this->flr_, ndef, version,
+                                 kernel);
+  };
+  params.delete_kernel = [](OpKernel* kernel) {
+    DeleteNonCachedKernel(kernel);
+  };
+  params.rendezvous_factory = [](const int64, const DeviceMgr* device_mgr,
+                                 Rendezvous** r) {
+    *r = new IntraProcessRendezvous(device_mgr);
+    return Status::OK();
+  };
+
+  Executor* cur_exec;
+  TF_RETURN_IF_ERROR(NewLocalExecutor(params, std::move(g), &cur_exec));
+  exec.reset(cur_exec);
+  FunctionCallFrame frame(arg_types, ret_types);
+  TF_RETURN_IF_ERROR(frame.SetArgs(args));
+  Executor::Args exec_args;
+  exec_args.call_frame = &frame;
+  exec_args.runner = runner_;
+  TF_RETURN_IF_ERROR(exec->Run(exec_args));
+  std::vector<Tensor> computed;
+  TF_RETURN_IF_ERROR(frame.GetRetvals(&computed));
+  if (computed.size() != rets.size()) {
+    return errors::InvalidArgument(
+        "The result does not match the expected number of return outpus",
+        ". Expected: ", rets.size(), ". Actual: ", computed.size());
+  }
+  for (int i = 0; i < rets.size(); ++i) {
+    *(rets[i]) = computed[i];
+  }
+  return Status::OK();
+}
+
 Status DatasetOpsTestBase::CreateOpKernelContext(
     OpKernel* kernel, gtl::InlinedVector<TensorValue, 4>* inputs,
     std::unique_ptr<OpKernelContext>* context) {
   params_ = absl::make_unique<OpKernelContext::Params>();
+  cancellation_manager_ = absl::make_unique<CancellationManager>();
+  params_->cancellation_manager = cancellation_manager_.get();
   params_->device = device_.get();
-  params_->resource_manager = device_->resource_manager();
   params_->frame_iter = FrameAndIter(0, 0);
+  params_->function_library = flr_;
   params_->inputs = inputs;
   params_->op_kernel = kernel;
-  params_->function_library = flr_;
-  params_->runner = &runner_;
-  step_container_ =
-      absl::make_unique<ScopedStepContainer>(0, [](const string&) {});
-  params_->step_container = step_container_.get();
   params_->resource_manager = resource_mgr_.get();
+  params_->runner = &runner_;
   checkpoint::TensorSliceReaderCacheWrapper slice_reader_cache_wrapper;
   slice_reader_cache_ =
       absl::make_unique<checkpoint::TensorSliceReaderCacheWrapper>();
   params_->slice_reader_cache = slice_reader_cache_.get();
+  step_container_ =
+      absl::make_unique<ScopedStepContainer>(0, [](const string&) {});
+  params_->step_container = step_container_.get();
 
   // Set the allocator attributes for the outputs.
   allocator_attrs_.clear();
@@ -313,7 +512,7 @@ Status DatasetOpsTestBase::CreateOpKernelContext(
     attr.set_on_host(on_host);
     allocator_attrs_.emplace_back(attr);
   }
-  params_->output_attr_array = gtl::vector_as_array(&allocator_attrs_);
+  params_->output_attr_array = allocator_attrs_.data();
 
   *context = absl::make_unique<OpKernelContext>(params_.get());
   return Status::OK();
@@ -368,6 +567,344 @@ Status DatasetOpsTestBase::AddDatasetInput(
   tensors_.push_back(std::move(input));
 
   return Status::OK();
+}
+
+Status DatasetOpsTestBase::CheckIteratorGetNext(
+    const std::vector<Tensor>& expected_outputs, bool compare_order) {
+  bool end_of_sequence = false;
+  std::vector<Tensor> out_tensors;
+  while (!end_of_sequence) {
+    std::vector<Tensor> next;
+    TF_RETURN_IF_ERROR(
+        iterator_->GetNext(iterator_ctx_.get(), &next, &end_of_sequence));
+    out_tensors.insert(out_tensors.end(), next.begin(), next.end());
+  }
+
+  TF_EXPECT_OK(ExpectEqual(out_tensors, expected_outputs,
+                           /*compare_order=*/compare_order));
+  return Status::OK();
+}
+
+Status DatasetOpsTestBase::CheckDatasetNodeName(
+    const string& expected_dataset_node_name) {
+  EXPECT_EQ(dataset_->node_name(), expected_dataset_node_name);
+  return Status::OK();
+}
+
+Status DatasetOpsTestBase::CheckDatasetTypeString(
+    const string& expected_type_str) {
+  EXPECT_EQ(dataset_->type_string(), expected_type_str);
+  return Status::OK();
+}
+
+Status DatasetOpsTestBase::CheckDatasetOutputDtypes(
+    const DataTypeVector& expected_output_dtypes) {
+  TF_EXPECT_OK(
+      VerifyTypesMatch(dataset_->output_dtypes(), expected_output_dtypes));
+  return Status::OK();
+}
+
+Status DatasetOpsTestBase::CheckDatasetOutputShapes(
+    const std::vector<PartialTensorShape>& expected_output_shapes) {
+  TF_EXPECT_OK(VerifyShapesCompatible(dataset_->output_shapes(),
+                                      expected_output_shapes));
+  return Status::OK();
+}
+
+Status DatasetOpsTestBase::CheckDatasetCardinality(int expected_cardinality) {
+  EXPECT_EQ(dataset_->Cardinality(), expected_cardinality);
+  return Status::OK();
+}
+
+Status DatasetOpsTestBase::CheckIteratorOutputDtypes(
+    const DataTypeVector& expected_output_dtypes) {
+  TF_EXPECT_OK(
+      VerifyTypesMatch(iterator_->output_dtypes(), expected_output_dtypes));
+  return Status::OK();
+}
+
+Status DatasetOpsTestBase::CheckIteratorOutputShapes(
+    const std::vector<PartialTensorShape>& expected_output_shapes) {
+  TF_EXPECT_OK(VerifyShapesCompatible(iterator_->output_shapes(),
+                                      expected_output_shapes));
+  return Status::OK();
+}
+
+Status DatasetOpsTestBase::CheckIteratorPrefix(
+    const string& expected_iterator_prefix) {
+  EXPECT_EQ(iterator_->prefix(), expected_iterator_prefix);
+  return Status::OK();
+}
+
+Status DatasetOpsTestBase::CheckIteratorSaveAndRestore(
+    const string& iterator_prefix, const std::vector<Tensor>& expected_outputs,
+    const std::vector<int>& breakpoints) {
+  std::unique_ptr<IteratorBase> iterator;
+  TF_RETURN_IF_ERROR(
+      dataset_->MakeIterator(iterator_ctx_.get(), iterator_prefix, &iterator));
+  std::unique_ptr<SerializationContext> serialization_ctx;
+  TF_RETURN_IF_ERROR(CreateSerializationContext(&serialization_ctx));
+  bool end_of_sequence = false;
+  std::vector<Tensor> out_tensors;
+  int cur_iteration = 0;
+  auto expected_outputs_it = expected_outputs.begin();
+  for (int breakpoint : breakpoints) {
+    VariantTensorData data;
+    VariantTensorDataWriter writer(&data);
+    TF_EXPECT_OK(iterator->Save(serialization_ctx.get(), &writer));
+    TF_RETURN_IF_ERROR(writer.Flush());
+    VariantTensorDataReader reader(&data);
+    TF_EXPECT_OK(RestoreIterator(iterator_ctx_.get(), &reader, iterator_prefix,
+                                 *dataset_, &iterator));
+
+    while (cur_iteration <= breakpoint) {
+      TF_RETURN_IF_ERROR(iterator->GetNext(iterator_ctx_.get(), &out_tensors,
+                                           &end_of_sequence));
+      if (!end_of_sequence) {
+        EXPECT_NE(expected_outputs_it, expected_outputs.end());
+        TF_EXPECT_OK(ExpectEqual(out_tensors.back(), *expected_outputs_it));
+        expected_outputs_it++;
+      }
+      cur_iteration++;
+    }
+
+    if (breakpoint >= expected_outputs.size()) {
+      EXPECT_TRUE(end_of_sequence);
+      EXPECT_EQ(expected_outputs_it, expected_outputs.end());
+    } else {
+      EXPECT_FALSE(end_of_sequence);
+    }
+  }
+  return Status::OK();
+}
+
+Status DatasetOpsTestBaseV2::Initialize(DatasetParams& dataset_params) {
+  TF_RETURN_IF_ERROR(InitThreadPool(thread_num_));
+  TF_RETURN_IF_ERROR(
+      InitFunctionLibraryRuntime(dataset_params.func_lib(), cpu_num_));
+
+  TF_RETURN_IF_ERROR(MakeDatasetOpKernel(dataset_params, &dataset_kernel_));
+  for (auto& pair : dataset_params.input_dataset_params()) {
+    TF_RETURN_IF_ERROR(MakeDatasetTensor(pair.first.get(), &pair.second));
+  }
+  gtl::InlinedVector<TensorValue, 4> inputs;
+  TF_RETURN_IF_ERROR(dataset_params.GetInputs(&inputs));
+  TF_RETURN_IF_ERROR(
+      CreateDatasetContext(dataset_kernel_.get(), &inputs, &dataset_ctx_));
+  TF_RETURN_IF_ERROR(
+      CreateDataset(dataset_kernel_.get(), dataset_ctx_.get(), &dataset_));
+  TF_RETURN_IF_ERROR(CreateIteratorContext(dataset_ctx_.get(), &iterator_ctx_));
+  TF_RETURN_IF_ERROR(dataset_->MakeIterator(
+      iterator_ctx_.get(), dataset_params.iterator_prefix(), &iterator_));
+  return Status::OK();
+}
+
+Status DatasetOpsTestBaseV2::MakeDatasetOpKernel(
+    const DatasetParams& dataset_params,
+    std::unique_ptr<OpKernel>* dataset_kernel) {
+  name_utils::OpNameParams params;
+  params.op_version = dataset_params.op_version();
+  std::vector<string> input_placeholder;
+  TF_RETURN_IF_ERROR(dataset_params.GetInputPlaceholder(&input_placeholder));
+  AttributeVector attributes;
+  TF_RETURN_IF_ERROR(dataset_params.GetAttributes(&attributes));
+  NodeDef node_def = test::function::NDef(
+      dataset_params.node_name(),
+      name_utils::OpName(ToString(dataset_params.type()), params),
+      input_placeholder, attributes);
+  TF_RETURN_IF_ERROR(CreateOpKernel(node_def, dataset_kernel));
+  return Status::OK();
+}
+
+Status DatasetOpsTestBaseV2::MakeDatasetTensor(DatasetParams* dataset_params,
+                                               Tensor* dataset) {
+  // Make sure all the input dataset tensors have been populated.
+  for (auto& pair : dataset_params->input_dataset_params()) {
+    TF_RETURN_IF_ERROR(MakeDatasetTensor(pair.first.get(), &pair.second));
+  }
+
+  AttributeVector attributes;
+  TF_RETURN_IF_ERROR(dataset_params->GetAttributes(&attributes));
+  gtl::InlinedVector<TensorValue, 4> inputs;
+  TF_RETURN_IF_ERROR(dataset_params->GetInputs(&inputs));
+  std::vector<Tensor> input_tensors;
+  for (auto& tensor_value : inputs) {
+    input_tensors.emplace_back(*tensor_value.tensor);
+  }
+
+  GraphConstructorOptions graph_opts;
+  graph_opts.allow_internal_ops = true;
+  graph_opts.expect_device_spec = false;
+  FunctionDef make_dataset_tensor_fdef;
+  TF_RETURN_IF_ERROR(
+      MakeDatasetTensorFunc(*dataset_params, &make_dataset_tensor_fdef));
+  TF_RETURN_IF_ERROR(RunFunction(make_dataset_tensor_fdef, attributes,
+                                 input_tensors, graph_opts,
+                                 /*rets=*/{dataset}));
+  return Status::OK();
+}
+
+Status DatasetOpsTestBaseV2::MakeDatasetTensorFunc(
+    const DatasetParams& dataset_params, FunctionDef* fdef) {
+  switch (dataset_params.type()) {
+    case DatasetParamsType::Range:
+      *fdef = test::function::MakeRangeDataset();
+      break;
+    case DatasetParamsType::Batch:
+      *fdef = test::function::MakeBatchDataset();
+      break;
+    case DatasetParamsType::Map: {
+      std::vector<string> input_placeholder;
+      TF_RETURN_IF_ERROR(
+          dataset_params.GetInputPlaceholder(&input_placeholder));
+      bool has_other_args = input_placeholder.size() > 1;
+      *fdef = test::function::MakeMapDataset(has_other_args);
+      break;
+    }
+    default:
+      return errors::Unimplemented("MakeDatasetTensorFunc() for ",
+                                   ToString(dataset_params.type()));
+  }
+  return Status::OK();
+}
+
+string ToString(DatasetParamsType type) {
+  switch (type) {
+    case DatasetParamsType::Range:
+      return "Range";
+    case DatasetParamsType::Batch:
+      return "Batch";
+    case DatasetParamsType::Map:
+      return "Map";
+    case DatasetParamsType::MapAndBatch:
+      return "MapAndBatch";
+    case DatasetParamsType::Sampling:
+      return "Sampling";
+  }
+}
+
+DatasetParams::DatasetParams(DataTypeVector output_dtypes,
+                             std::vector<PartialTensorShape> output_shapes,
+                             string node_name, DatasetParamsType type)
+    : output_dtypes_(std::move(output_dtypes)),
+      output_shapes_(std::move(output_shapes)),
+      node_name_(std::move(node_name)),
+      type_(type) {}
+
+bool DatasetParams::IsDatasetTensor(const Tensor& tensor) {
+  return tensor.dtype() == DT_VARIANT &&
+         TensorShapeUtils::IsScalar(tensor.shape());
+}
+
+RangeDatasetParams::RangeDatasetParams(
+    int64 start, int64 stop, int64 step, DataTypeVector output_dtypes,
+    std::vector<PartialTensorShape> output_shapes, string node_name)
+    : DatasetParams(std::move(output_dtypes), std::move(output_shapes),
+                    std::move(node_name), DatasetParamsType::Range),
+      start_(CreateTensor<int64>(TensorShape({}), {start})),
+      stop_(CreateTensor<int64>(TensorShape({}), {stop})),
+      step_(CreateTensor<int64>(TensorShape({}), {step})) {}
+
+RangeDatasetParams::RangeDatasetParams(int64 start, int64 stop, int64 step)
+    : DatasetParams({DT_INT64}, {PartialTensorShape({})}, "range_dataset",
+                    DatasetParamsType::Range),
+      start_(CreateTensor<int64>(TensorShape({}), {start})),
+      stop_(CreateTensor<int64>(TensorShape({}), {stop})),
+      step_(CreateTensor<int64>(TensorShape({}), {step})) {}
+
+Status RangeDatasetParams::GetInputs(
+    gtl::InlinedVector<TensorValue, 4>* inputs) {
+  *inputs = {TensorValue(&start_), TensorValue(&stop_), TensorValue(&step_)};
+  return Status::OK();
+}
+
+Status RangeDatasetParams::GetInputPlaceholder(
+    std::vector<string>* input_placeholder) const {
+  *input_placeholder = {RangeDatasetOp::kStart, RangeDatasetOp::kStop,
+                        RangeDatasetOp::kStep};
+  return Status::OK();
+}
+
+Status RangeDatasetParams::GetAttributes(AttributeVector* attr_vector) const {
+  *attr_vector = {{RangeDatasetOp::kOutputTypes, output_dtypes_},
+                  {RangeDatasetOp::kOutputShapes, output_shapes_}};
+  return Status::OK();
+}
+
+Status BatchDatasetParams::GetInputs(
+    gtl::InlinedVector<TensorValue, 4>* inputs) {
+  inputs->reserve(input_dataset_params_group_.size());
+  for (auto& pair : input_dataset_params_group_) {
+    if (!IsDatasetTensor(pair.second)) {
+      inputs->clear();
+      return errors::Internal(
+          "The input dataset is not populated as the dataset tensor yet.");
+    } else {
+      inputs->emplace_back(TensorValue(&pair.second));
+    }
+  }
+  inputs->emplace_back(TensorValue(&batch_size_));
+  inputs->emplace_back(TensorValue(&drop_remainder_));
+  return Status::OK();
+}
+
+Status BatchDatasetParams::GetInputPlaceholder(
+    std::vector<string>* input_placeholder) const {
+  *input_placeholder = {BatchDatasetOp::kInputDataset,
+                        BatchDatasetOp::kBatchSize,
+                        BatchDatasetOp::kDropRemainder};
+  return Status::OK();
+}
+
+Status BatchDatasetParams::GetAttributes(AttributeVector* attr_vector) const {
+  *attr_vector = {{BatchDatasetOp::kParallelCopy, parallel_copy_},
+                  {BatchDatasetOp::kOutputTypes, output_dtypes_},
+                  {BatchDatasetOp::kOutputShapes, output_shapes_}};
+  return Status::OK();
+}
+
+int BatchDatasetParams::op_version() const { return op_version_; }
+
+Status MapDatasetParams::GetInputs(gtl::InlinedVector<TensorValue, 4>* inputs) {
+  inputs->reserve(input_dataset_params_group_.size());
+  for (auto& pair : input_dataset_params_group_) {
+    if (!IsDatasetTensor(pair.second)) {
+      inputs->clear();
+      return errors::Internal(
+          "The input dataset is not populated as the dataset tensor yet.");
+    } else {
+      inputs->emplace_back(TensorValue(&pair.second));
+    }
+  }
+  for (auto& argument : other_arguments_) {
+    inputs->emplace_back(TensorValue(&argument));
+  }
+  return Status::OK();
+}
+
+Status MapDatasetParams::GetInputPlaceholder(
+    std::vector<string>* input_placeholder) const {
+  input_placeholder->emplace_back(MapDatasetOp::kInputDataset);
+  for (int i = 0; i < other_arguments_.size(); ++i) {
+    input_placeholder->emplace_back(
+        absl::StrCat(MapDatasetOp::kOtherArguments, "_", i));
+  }
+  return Status::OK();
+}
+
+Status MapDatasetParams::GetAttributes(AttributeVector* attr_vector) const {
+  *attr_vector = {
+      {MapDatasetOp::kFunc, func_},
+      {MapDatasetOp::kTarguments, type_arguments_},
+      {MapDatasetOp::kOutputShapes, output_shapes_},
+      {MapDatasetOp::kOutputTypes, output_dtypes_},
+      {MapDatasetOp::kUseInterOpParallelism, use_inter_op_parallelism_},
+      {MapDatasetOp::kPreserveCardinality, preserve_cardinality_}};
+  return Status::OK();
+}
+
+std::vector<FunctionDef> MapDatasetParams::func_lib() const {
+  return func_lib_;
 }
 
 }  // namespace data

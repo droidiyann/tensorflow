@@ -56,74 +56,60 @@ def _GetShrunkInceptionShapes(shrink=10):
     Tuple (input_size, filter_size, out_size, stride, padding), the convolution
     parameters of Inception layers.
   """
-  input_sizes = [[4, 5, 5, 1248], [4, 8, 8, 384], [4, 8, 8, 384], [
-      4, 8, 8, 2048
-  ], [4, 8, 8, 448], [4, 8, 8, 2048], [4, 8, 8, 2048], [4, 8, 8, 2048], [
-      4, 8, 8, 1760
-  ], [4, 8, 8, 1760], [4, 8, 8, 1760], [4, 8, 8, 1760], [4, 17, 17, 192], [
-      4, 17, 17, 192
-  ], [4, 17, 17, 1248], [4, 17, 17, 128], [4, 17, 17, 1248], [4, 17, 17, 224], [
-      4, 17, 17, 192
-  ], [4, 17, 17, 192], [4, 17, 17, 1216], [4, 17, 17, 1216], [4, 17, 17, 224], [
-      4, 17, 17, 192
-  ], [4, 17, 17, 192], [4, 17, 17, 1152], [4, 17, 17, 1152], [4, 17, 17, 192], [
-      4, 17, 17, 160
-  ], [4, 17, 17, 1152], [4, 17, 17, 1024], [4, 17, 17, 128], [4, 17, 17, 1024],
-                 [4, 17, 17, 128], [4, 17, 17, 1024], [4, 17, 17, 128], [
-                     4, 17, 17, 768
-                 ], [4, 17, 17, 128], [4, 17, 17, 128], [4, 17, 17, 768],
-                 [4, 17, 17, 768], [4, 35, 35, 96], [4, 35, 35, 288], [
-                     4, 35, 35, 64
-                 ], [4, 35, 35, 288], [4, 35, 35, 256], [4, 35, 35, 48], [
-                     4, 35, 35, 256
-                 ], [4, 35, 35, 96], [4, 35, 35, 192], [4, 35, 35, 192], [
-                     4, 35, 35, 192
-                 ], [4, 73, 73, 64], [4, 73, 73, 64], [4, 147, 147, 24]]
-  filter_sizes = [[1, 1, 1248, 128], [1, 3, 384, 384], [3, 1, 384, 384], [
-      1, 1, 2048, 192
-  ], [3, 3, 448, 384], [1, 1, 2048, 320], [1, 1, 2048, 448], [1, 1, 2048, 384],
-                  [1, 1, 1760, 384], [1, 1, 1760, 192], [1, 1, 1760, 448], [
-                      1, 1, 1760, 320
-                  ], [3, 3, 192, 192], [3, 3, 192, 192], [1, 1, 1248, 192], [
-                      3, 3, 128, 320
-                  ], [1, 1, 1248, 128], [1, 3, 224, 224], [3, 1, 192, 256], [
-                      1, 3, 192, 256
-                  ], [1, 1, 1216, 192], [1, 1, 1216, 96], [3, 1, 224, 224], [
-                      3, 3, 192, 224
-                  ], [1, 3, 192, 192], [1, 1, 1152, 192], [1, 1, 1152, 128], [
-                      3, 1, 192, 192
-                  ], [3, 3, 160, 192], [1, 1, 1152, 160], [1, 1, 1024, 128], [
-                      1, 3, 128, 192
-                  ], [1, 1, 1024, 160], [3, 1, 128, 192], [1, 1, 1024, 256], [
-                      3, 1, 128, 128
-                  ], [1, 1, 768, 192], [1, 3, 128, 128], [3, 3, 128, 128], [
-                      1, 1, 768, 128
-                  ], [1, 1, 768, 320], [3, 3, 96, 96], [3, 3, 288, 384], [
-                      3, 3, 64, 96
-                  ], [1, 1, 288, 64], [1, 1, 256, 64], [5, 5, 48, 64],
-                  [1, 1, 256, 48], [3, 3, 96, 96], [1, 1, 192, 32], [
-                      1, 1, 192, 64
-                  ], [1, 1, 192, 48], [3, 3, 64, 192], [1, 1, 64,
-                                                        64], [1, 1, 24, 64]]
-  out_sizes = [[4, 5, 5, 128], [4, 8, 8, 384], [4, 8, 8, 384], [4, 8, 8, 192], [
-      4, 8, 8, 384
-  ], [4, 8, 8, 320], [4, 8, 8, 448], [4, 8, 8, 384], [4, 8, 8, 384], [
-      4, 8, 8, 192
-  ], [4, 8, 8, 448], [4, 8, 8, 320], [4, 8, 8, 192], [4, 17, 17, 192], [
-      4, 17, 17, 192
-  ], [4, 8, 8, 320], [4, 17, 17, 128], [4, 17, 17, 224], [4, 17, 17, 256], [
-      4, 17, 17, 256
-  ], [4, 17, 17, 192], [4, 17, 17, 96], [4, 17, 17, 224], [4, 17, 17, 224], [
-      4, 17, 17, 192
-  ], [4, 17, 17, 192], [4, 17, 17, 128], [4, 17, 17, 192], [4, 17, 17, 192], [
-      4, 17, 17, 160
-  ], [4, 17, 17, 128], [4, 17, 17, 192], [4, 17, 17, 160], [4, 17, 17, 192], [
-      4, 17, 17, 256
-  ], [4, 17, 17, 128], [4, 17, 17, 192], [4, 17, 17, 128], [4, 17, 17, 128], [
-      4, 17, 17, 128
-  ], [4, 17, 17, 320], [4, 17, 17, 96], [4, 17, 17, 384], [4, 35, 35, 96], [
-      4, 35, 35, 64
-  ], [4, 35, 35, 64], [4, 35, 35, 64], [4, 35, 35, 48], [4, 35, 35, 96],
+  input_sizes = [[4, 5, 5, 1248], [4, 8, 8, 384], [4, 8, 8, 384],
+                 [4, 8, 8, 2048], [4, 8, 8, 448], [4, 8, 8, 2048],
+                 [4, 8, 8, 2048], [4, 8, 8, 2048], [4, 8, 8, 1760],
+                 [4, 8, 8, 1760], [4, 8, 8, 1760], [4, 8, 8, 1760],
+                 [4, 17, 17, 192], [4, 17, 17, 192], [4, 17, 17, 1248],
+                 [4, 17, 17, 128], [4, 17, 17, 1248], [4, 17, 17, 224],
+                 [4, 17, 17, 192], [4, 17, 17, 192], [4, 17, 17, 1216],
+                 [4, 17, 17, 1216], [4, 17, 17, 224], [4, 17, 17, 192],
+                 [4, 17, 17, 192], [4, 17, 17, 1152], [4, 17, 17, 1152],
+                 [4, 17, 17, 192], [4, 17, 17, 160], [4, 17, 17, 1152],
+                 [4, 17, 17, 1024], [4, 17, 17, 128], [4, 17, 17, 1024],
+                 [4, 17, 17, 128], [4, 17, 17, 1024], [4, 17, 17, 128],
+                 [4, 17, 17, 768], [4, 17, 17, 128], [4, 17, 17, 128],
+                 [4, 17, 17, 768], [4, 17, 17, 768], [4, 35, 35, 96],
+                 [4, 35, 35, 288], [4, 35, 35, 64], [4, 35, 35, 288],
+                 [4, 35, 35, 256], [4, 35, 35, 48], [4, 35, 35, 256],
+                 [4, 35, 35, 96], [4, 35, 35, 192], [4, 35, 35, 192],
+                 [4, 35, 35, 192], [4, 73, 73, 64], [4, 73, 73, 64],
+                 [4, 147, 147, 24]]
+  filter_sizes = [[1, 1, 1248, 128], [1, 3, 384, 384], [3, 1, 384, 384],
+                  [1, 1, 2048, 192], [3, 3, 448, 384], [1, 1, 2048, 320],
+                  [1, 1, 2048, 448], [1, 1, 2048, 384], [1, 1, 1760, 384],
+                  [1, 1, 1760, 192], [1, 1, 1760, 448], [1, 1, 1760, 320],
+                  [3, 3, 192, 192], [3, 3, 192, 192], [1, 1, 1248, 192],
+                  [3, 3, 128, 320], [1, 1, 1248, 128], [1, 3, 224, 224],
+                  [3, 1, 192, 256], [1, 3, 192, 256], [1, 1, 1216, 192],
+                  [1, 1, 1216, 96], [3, 1, 224, 224], [3, 3, 192, 224],
+                  [1, 3, 192, 192], [1, 1, 1152, 192], [1, 1, 1152, 128],
+                  [3, 1, 192, 192], [3, 3, 160, 192], [1, 1, 1152, 160],
+                  [1, 1, 1024, 128], [1, 3, 128, 192], [1, 1, 1024, 160],
+                  [3, 1, 128, 192], [1, 1, 1024, 256], [3, 1, 128, 128],
+                  [1, 1, 768, 192], [1, 3, 128, 128], [3, 3, 128, 128],
+                  [1, 1, 768, 128], [1, 1, 768, 320], [3, 3, 96, 96],
+                  [3, 3, 288, 384], [3, 3, 64, 96], [1, 1, 288, 64],
+                  [1, 1, 256, 64], [5, 5, 48, 64], [1, 1, 256, 48],
+                  [3, 3, 96, 96], [1, 1, 192, 32], [1, 1, 192, 64],
+                  [1, 1, 192, 48], [3, 3, 64, 192], [1, 1, 64, 64],
+                  [1, 1, 24, 64]]
+  out_sizes = [[4, 5, 5, 128], [4, 8, 8, 384], [4, 8, 8, 384], [4, 8, 8, 192],
+               [4, 8, 8, 384], [4, 8, 8, 320], [4, 8, 8, 448], [4, 8, 8, 384],
+               [4, 8, 8, 384], [4, 8, 8, 192], [4, 8, 8, 448], [4, 8, 8, 320],
+               [4, 8, 8, 192], [4, 17, 17, 192], [4, 17, 17, 192],
+               [4, 8, 8, 320], [4, 17, 17, 128], [4, 17, 17, 224],
+               [4, 17, 17, 256], [4, 17, 17, 256], [4, 17, 17, 192],
+               [4, 17, 17, 96], [4, 17, 17, 224], [4, 17, 17, 224],
+               [4, 17, 17, 192], [4, 17, 17, 192], [4, 17, 17, 128],
+               [4, 17, 17, 192], [4, 17, 17, 192], [4, 17, 17, 160],
+               [4, 17, 17, 128], [4, 17, 17, 192], [4, 17, 17, 160],
+               [4, 17, 17, 192], [4, 17, 17, 256], [4, 17, 17, 128],
+               [4, 17, 17, 192], [4, 17, 17, 128], [4, 17, 17, 128],
+               [4, 17, 17, 128], [4, 17, 17, 320], [4, 17, 17, 96],
+               [4, 17, 17, 384], [4, 35, 35, 96], [4, 35, 35, 64],
+               [4, 35, 35, 64], [4, 35, 35, 64], [4, 35, 35,
+                                                  48], [4, 35, 35, 96],
                [4, 35, 35, 32], [4, 35, 35, 64], [4, 35, 35, 48],
                [4, 71, 71, 192], [4, 73, 73, 64], [4, 147, 147, 64]]
   strides = [
@@ -212,10 +198,10 @@ class FusedConv2DBiasActivationTest(object):
     """Verifies the output values of the convolution function.
 
     Args:
-      tensor_in_sizes: Input tensor dimensions in
-        [batch, input_rows, input_cols, input_depth].
-      filter_in_sizes: Filter tensor dimensions in
-        [kernel_rows, kernel_cols, input_depth, output_depth].
+      tensor_in_sizes: Input tensor dimensions in [batch, input_rows,
+        input_cols, input_depth].
+      filter_in_sizes: Filter tensor dimensions in [kernel_rows, kernel_cols,
+        input_depth, output_depth].
       bias: 1-D bias tensor of length output_depth.
       strides: Stride: [col_stride, row_stride]
       padding: Padding type.
@@ -223,6 +209,7 @@ class FusedConv2DBiasActivationTest(object):
       data_format: Format of the data tensors.
       filter_format: Filter format to use for the fused convolution.
       dtype: Data type for inputs and outputs.
+
     Returns:
       Symbolic tensor value and reference value that can be used to
       execute the computation and verify the results.
@@ -237,46 +224,45 @@ class FusedConv2DBiasActivationTest(object):
     # This is to guarantee that there are always negative values after
     # bias add so that we can test whether relu works correctly.
     x3 = bias
-    with self.cached_session(use_gpu=True), self.test_scope():
-      t1 = constant_op.constant(x1, shape=tensor_in_sizes, dtype=dtype)
-      t2 = constant_op.constant(x2, shape=filter_in_sizes, dtype=dtype)
-      fused_t2 = t2
-      if filter_format == "OIHW":
-        fused_t2 = _HwioToOihw(t2)
-      t3 = constant_op.constant(x3, shape=[bias_size], dtype=dtype)
-      strides = [1] + strides + [1]
-      if data_format == "NCHW":
-        t1 = test_util.NHWCToNCHW(t1)
-        strides = test_util.NHWCToNCHW(strides)
-      output = fused_conv2d_bias_activation_op.fused_conv2d_bias_activation(
-          t1,
-          fused_t2,
-          t3,
-          strides=strides,
-          padding=padding,
-          data_format=data_format,
-          filter_format=filter_format,
-          activation_mode=activation_mode)
-      ref_conv_output = nn_ops.conv2d(
-          t1, t2, strides=strides, padding=padding, data_format=data_format)
-      ref_bias_output = nn_ops.bias_add(
-          ref_conv_output, t3, data_format=data_format)
-      ref_output = nn_ops.relu(ref_bias_output)
-      if data_format == "NCHW":
-        output = test_util.NCHWToNHWC(output)
-        ref_output = test_util.NCHWToNHWC(ref_output)
+    t1 = constant_op.constant(x1, shape=tensor_in_sizes, dtype=dtype)
+    t2 = constant_op.constant(x2, shape=filter_in_sizes, dtype=dtype)
+    fused_t2 = t2
+    if filter_format == "OIHW":
+      fused_t2 = _HwioToOihw(t2)
+    t3 = constant_op.constant(x3, shape=[bias_size], dtype=dtype)
+    strides = [1] + strides + [1]
+    if data_format == "NCHW":
+      t1 = test_util.NHWCToNCHW(t1)
+      strides = test_util.NHWCToNCHW(strides)
+    output = fused_conv2d_bias_activation_op.fused_conv2d_bias_activation(
+        t1,
+        fused_t2,
+        t3,
+        strides=strides,
+        padding=padding,
+        data_format=data_format,
+        filter_format=filter_format,
+        activation_mode=activation_mode)
+    ref_conv_output = nn_ops.conv2d(
+        t1, t2, strides=strides, padding=padding, data_format=data_format)
+    ref_bias_output = nn_ops.bias_add(
+        ref_conv_output, t3, data_format=data_format)
+    ref_output = nn_ops.relu(ref_bias_output)
+    if data_format == "NCHW":
+      output = test_util.NCHWToNHWC(output)
+      ref_output = test_util.NCHWToNHWC(ref_output)
 
-      return output, ref_output
+    return output, ref_output
 
   def CompareFwdValues(self, tensor_in_sizes, filter_in_sizes, conv_strides,
                        padding):
     """Verifies that CPU and GPU produce the same values.
 
     Args:
-      tensor_in_sizes: Input tensor dimensions in
-        [batch, input_rows, input_cols, input_depth].
-      filter_in_sizes: Filter tensor dimensions in
-        [kernel_rows, kernel_cols, input_depth, output_depth].
+      tensor_in_sizes: Input tensor dimensions in [batch, input_rows,
+        input_cols, input_depth].
+      filter_in_sizes: Filter tensor dimensions in [kernel_rows, kernel_cols,
+        input_depth, output_depth].
       conv_strides: [row_stride, col_stride] for the convolution;
       padding: Padding type.
     """
@@ -285,62 +271,63 @@ class FusedConv2DBiasActivationTest(object):
     x3 = np.random.rand(*[filter_in_sizes[-1]]).astype(np.float32)
 
     def _SetupVal(data_format, use_gpu):
-      with self.cached_session(use_gpu=use_gpu), self.test_scope():
-        t1 = constant_op.constant(x1, shape=tensor_in_sizes)
-        t2 = constant_op.constant(x2, shape=filter_in_sizes)
-        t3 = constant_op.constant(x3, shape=[filter_in_sizes[-1]])
-        strides = [1] + conv_strides + [1]
-        if data_format == "NCHW":
-          t1 = test_util.NHWCToNCHW(t1)
-          strides = test_util.NHWCToNCHW(strides)
-        output = fused_conv2d_bias_activation_op.fused_conv2d_bias_activation(
-            t1,
-            t2,
-            t3,
-            strides=strides,
-            padding=padding,
-            data_format=data_format,
-            activation_mode="Relu")
+      t1 = constant_op.constant(x1, shape=tensor_in_sizes)
+      t2 = constant_op.constant(x2, shape=filter_in_sizes)
+      t3 = constant_op.constant(x3, shape=[filter_in_sizes[-1]])
+      strides = [1] + conv_strides + [1]
+      if data_format == "NCHW":
+        t1 = test_util.NHWCToNCHW(t1)
+        strides = test_util.NHWCToNCHW(strides)
+      output = fused_conv2d_bias_activation_op.fused_conv2d_bias_activation(
+          t1,
+          t2,
+          t3,
+          strides=strides,
+          padding=padding,
+          data_format=data_format,
+          activation_mode="Relu")
 
-        if data_format == "NCHW":
-          output = test_util.NCHWToNHWC(output)
-        return output
+      if data_format == "NCHW":
+        output = test_util.NCHWToNHWC(output)
+      return output
 
-    tensors = []
-    for (data_format, use_gpu) in _GetTestConfigs():
-      tensors.append(_SetupVal(data_format, use_gpu))
-    with self.cached_session() as sess, self.test_scope():
+    with self.session() as sess, self.test_scope():
+      tensors = []
+      for (data_format, use_gpu) in _GetTestConfigs():
+        tensors.append(_SetupVal(data_format, use_gpu))
       values = sess.run(tensors)
-      for i in range(1, len(values)):
-        self.assertAllClose(values[0], values[i], rtol=1e-3, atol=1e-3)
+    for i in range(1, len(values)):
+      self.assertAllClose(values[0], values[i], rtol=1e-3, atol=1e-3)
 
   def _VerifyValues(self, tensor_in_sizes, filter_in_sizes, bias, strides,
                     padding):
-    tensors = []
-    ref_tensors = []
-    for (data_format, use_gpu) in _GetTestConfigs():
-      for dtype in self._DtypesToTest(use_gpu):
-        for filter_format in self._FilterFormatsToTest(use_gpu):
-          result, expected = self._SetupValuesForDevice(
-              tensor_in_sizes, filter_in_sizes, bias, strides, padding, "Relu",
-              data_format, filter_format, dtype)
-        tensors.append(result)
-        ref_tensors.append(expected)
-      with self.cached_session() as sess, self.test_scope():
-        values = sess.run(tensors)
-        ref_values = sess.run(ref_tensors)
-        for i in range(len(tensors)):
-          conv = tensors[i]
-          value = values[i]
-          ref_value = ref_values[i]
-          tf_logging.info("expected = %s", ref_value)
-          tf_logging.info("actual = %s", value)
-          tol = 1e-5
-          if value.dtype == np.float16:
-            tol = 1e-3
-          self.assertAllClose(
-              np.ravel(ref_value), np.ravel(value), atol=tol, rtol=tol)
-          self.assertShapeEqual(value, conv)
+    with self.session() as sess, self.test_scope():
+      tensors = []
+      ref_tensors = []
+      for (data_format, use_gpu) in _GetTestConfigs():
+        with ops.device("/gpu:0" if use_gpu else "/cpu:0"):
+          for dtype in self._DtypesToTest(use_gpu):
+            for filter_format in self._FilterFormatsToTest(use_gpu):
+              result, expected = self._SetupValuesForDevice(
+                  tensor_in_sizes, filter_in_sizes, bias, strides, padding,
+                  "Relu", data_format, filter_format, dtype)
+            tensors.append(result)
+            ref_tensors.append(expected)
+
+            values = sess.run(tensors)
+            ref_values = sess.run(ref_tensors)
+            for i in range(len(tensors)):
+              conv = tensors[i]
+              value = values[i]
+              ref_value = ref_values[i]
+              tf_logging.info("expected = %s", ref_value)
+              tf_logging.info("actual = %s", value)
+              tol = 1e-5
+              if value.dtype == np.float16:
+                tol = 1e-3
+              self.assertAllClose(
+                  np.ravel(ref_value), np.ravel(value), atol=tol, rtol=tol)
+              self.assertShapeEqual(value, conv)
 
   def testConv2D1x1Filter(self, gpu_only=True):
     if gpu_only and not test.is_gpu_available():
@@ -537,7 +524,7 @@ class FusedConv2DBiasActivationTest(object):
     if gpu_only and not test.is_gpu_available():
       tf_logging.info("Skipping OpEdgeCases tests.")
       return
-    with self.cached_session() as sess, self.test_scope():
+    with self.session() as sess, self.test_scope():
       # Illegal strides.
       with self.assertRaisesRegexp(
           errors_impl.UnimplementedError,
@@ -624,8 +611,8 @@ def _CalculateConvolvedOutputDim(input_dim, filter_dim, stride, padding_type):
   Args:
     input_dim: An `int` specifying the size of the input dimension.
     filter_dim: An `int` specifying the size of the filter dimension.
-    stride: An `int` specifying the step size of the convolution along the
-      input dimension.
+    stride: An `int` specifying the step size of the convolution along the input
+      dimension.
     padding_type: either 'VALID' or 'SAME'.
 
   Returns:
@@ -640,6 +627,36 @@ def _CalculateConvolvedOutputDim(input_dim, filter_dim, stride, padding_type):
 def _GetFusedConvInt8TestParams():
   """Returns test parameters shared by all Int8 FusedConv tests."""
   _test_params = [
+      {
+          "batch_size": 4,
+          "input_channels": 256,
+          "output_channels": 256,
+          "input_height": 228,
+          "input_width": 228,
+          "filter_height": 6,
+          "filter_width": 6,
+          "vertical_stride": 1,
+          "horizontal_stride": 1,
+          "conv_input_scale": 0.00002,
+          "side_input_scale": 0.2,
+          "bias_scale": 1.0,
+          "padding_type": "SAME"
+      },
+      {
+          "batch_size": 3,
+          "input_channels": 8,
+          "output_channels": 4,
+          "input_height": 5,
+          "input_width": 6,
+          "filter_height": 3,
+          "filter_width": 3,
+          "vertical_stride": 1,
+          "horizontal_stride": 1,
+          "conv_input_scale": np.linspace(0.006, 0.009, 4, dtype=np.float32),
+          "side_input_scale": 0.5,
+          "bias_scale": 1,
+          "padding_type": "SAME"
+      },
       {
           "batch_size": 1,
           "input_channels": 4,
@@ -843,7 +860,8 @@ def _SimulateFusedConv2dBiasActivationInt8OnCpu(conv_input_scale, conv_input,
     restrictions as the actual op.
 
   Args:
-    conv_input_scale: A scalar 'float'.
+    conv_input_scale: A scalar 'float' Tensor or [1, 1, 1, C] Tensor for the
+      per-channel quantized mode.
     conv_input: A `Tensor` of type `qint8` in NHWC layout.
     kernel: A `Tensor` of type `qint8` in HWIO layout.
     padding: A `string` from: `"SAME", "VALID"`.
@@ -904,20 +922,33 @@ class FusedConvInt8CPUTests(object):
     bias_scale = test_param["bias_scale"]
     padding_type = test_param["padding_type"]
 
-    with self.cached_session(use_gpu=False) as sess, self.test_scope():
+    with self.session() as sess, self.test_scope():
       conv_input, _, _ = gen_array_ops.quantize_v2(
           random_ops.random_uniform(
               [batch_size, input_height, input_width, input_channels],
               minval=-0.0,
               maxval=1.0,
-              dtype=dtypes.float32), -1.0, 1.0, dtypes.qint8)
+              dtype=dtypes.float32),
+          -1.0,
+          1.0,
+          dtypes.qint8,
+          mode="SCALED")
+      self.assertTrue(
+          sess.run(
+              math_ops.reduce_all(
+                  math_ops.greater_equal(
+                      array_ops.bitcast(conv_input, dtypes.int8), 0))))
 
       kernel, _, _ = gen_array_ops.quantize_v2(
           random_ops.random_uniform(
               [filter_height, filter_width, input_channels, output_channels],
               minval=-1.0,
               maxval=1.0,
-              dtype=dtypes.float32), -1.0, 1.0, dtypes.qint8)
+              dtype=dtypes.float32),
+          -1.0,
+          1.0,
+          dtypes.qint8,
+          mode="SCALED")
 
       output_height = _CalculateConvolvedOutputDim(input_height, filter_height,
                                                    vertical_stride,
@@ -933,7 +964,11 @@ class FusedConvInt8CPUTests(object):
               [batch_size, output_height, output_width, output_channels],
               minval=0.0,
               maxval=1.0,
-              dtype=dtypes.float32), -1.0, 1.0, dtypes.qint8)
+              dtype=dtypes.float32),
+          -1.0,
+          1.0,
+          dtypes.qint8,
+          mode="SCALED")
 
       biases = random_ops.random_uniform([output_channels],
                                          minval=-10 * bias_scale,
@@ -950,10 +985,14 @@ class FusedConvInt8CPUTests(object):
           padding=padding_type,
           conv_input_scale=conv_input_scale,
           side_input_scale=side_input_scale,
-          side_input=side_input,
+          side_input=(None if side_input_scale == 0.0 else side_input),
           activation_mode="Relu" if apply_relu else "None",
           data_format="NHWC",
           filter_format="HWIO")
+
+      if isinstance(conv_input_scale, (list, np.ndarray)):
+        conv_input_scale = array_ops.reshape(
+            conv_input_scale, [1, 1, 1, len(conv_input_scale)])
 
       expected = _SimulateFusedConv2dBiasActivationInt8OnCpu(
           conv_input_scale, conv_input, kernel, padding_type, strides,
@@ -966,6 +1005,37 @@ class FusedConvInt8CPUTests(object):
     for apply_relu in [True, False]:
       for test_param in self._test_params:
         self.runTest(test_param, apply_relu)
+
+  def testRoundingMode(self):
+    """Verify the fused convolution op uses half-to-even rounding mode."""
+    batches = 1
+    input_size = 2
+    input_channels = 1
+    output_channels = 1
+    conv_input = np.array([1, 2, 3, 4]).reshape(
+        (batches, input_size, input_size, input_channels)).astype(np.int8)
+    kernel = np.array([1]).reshape(
+        (1, 1, input_channels, output_channels)).astype(np.int8)
+    biases = np.zeros((output_channels)).astype(np.float32)
+
+    with self.session() as sess, self.test_scope():
+      actual = fused_conv2d_bias_activation_op.fused_conv2d_bias_activation(
+          math_ops.cast(conv_input, dtypes.qint8),
+          math_ops.cast(kernel, dtypes.qint8),
+          biases,
+          strides=[1, 1, 1, 1],
+          padding="SAME",
+          conv_input_scale=0.5,
+          side_input_scale=0.0,
+          activation_mode="None",
+          data_format="NHWC",
+          filter_format="HWIO")
+      actual_value = sess.run(actual)
+      # The convolution output scaled is [0.5, 1.0, 1.5, 2.0]. After rounding
+      # half to even, the final output is [0, 1, 2, 2].
+      self.assertTrue(
+          np.array_equal(actual_value.flatten(),
+                         np.array([0, 1, 2, 2]).astype(np.int8)))
 
 
 # Test that GPU and CPU kernels produce identical results for QInt8 data type.
@@ -995,23 +1065,39 @@ class FusedConvInt8CorrespondenceTests(object):
     bias_scale = test_param["bias_scale"]
     padding_type = test_param["padding_type"]
 
-    with self.cached_session(use_gpu=True) as sess, self.test_scope():
+    if isinstance(conv_input_scale, (list, np.ndarray)):
+      # GPU kernel (Cudnn) does not support per-channel scale.
+      return
+
+    with self.session() as sess, self.test_scope():
       conv_input, _, _ = gen_array_ops.quantize_v2(
           random_ops.random_uniform(
               [batch_size, input_channels // 4, input_height, input_width, 4],
-              minval=-0.0,
+              minval=0.0,
               maxval=1.0,
-              dtype=dtypes.float32), -1.0, 1.0, dtypes.qint8)
+              dtype=dtypes.float32),
+          -1.0,
+          1.0,
+          dtypes.qint8,
+          mode="SCALED")
+      self.assertTrue(
+          sess.run(
+              math_ops.reduce_all(
+                  math_ops.greater_equal(
+                      array_ops.bitcast(conv_input, dtypes.int8), 0))))
 
       kernel, _, _ = gen_array_ops.quantize_v2(
           random_ops.random_uniform([
               output_channels, input_channels // 4, filter_height, filter_width,
               4
           ],
-                                    minval=-1.0,
-                                    maxval=1.0,
-                                    dtype=dtypes.float32), -1.0, 1.0,
-          dtypes.qint8)
+                                    minval=-128.0,
+                                    maxval=127.0,
+                                    dtype=dtypes.float32),
+          -128.0,
+          127.0,
+          dtypes.qint8,
+          mode="SCALED")
 
       output_height = _CalculateConvolvedOutputDim(input_height, filter_height,
                                                    vertical_stride,
@@ -1028,8 +1114,11 @@ class FusedConvInt8CorrespondenceTests(object):
           ],
                                     minval=0.0,
                                     maxval=1.0,
-                                    dtype=dtypes.float32), -1.0, 1.0,
-          dtypes.qint8)
+                                    dtype=dtypes.float32),
+          -1.0,
+          1.0,
+          dtypes.qint8,
+          mode="SCALED")
 
       biases = random_ops.random_uniform([output_channels],
                                          minval=-10 * bias_scale,
@@ -1045,7 +1134,8 @@ class FusedConvInt8CorrespondenceTests(object):
             padding=padding_type,
             conv_input_scale=conv_input_scale,
             side_input_scale=side_input_scale,
-            side_input=_Int8Roundtrip(_NchwVectCToNhwc, side_input),
+            side_input=(None if side_input_scale == 0.0 else _Int8Roundtrip(
+                _NchwVectCToNhwc, side_input)),
             activation_mode="Relu" if apply_relu else "None",
             data_format="NHWC",
             filter_format="HWIO")
@@ -1060,7 +1150,7 @@ class FusedConvInt8CorrespondenceTests(object):
             padding=padding_type,
             conv_input_scale=conv_input_scale,
             side_input_scale=side_input_scale,
-            side_input=side_input,
+            side_input=(None if side_input_scale == 0.0 else side_input),
             activation_mode="Relu" if apply_relu else "None",
             data_format="NCHW_VECT_C",
             filter_format="OIHW_VECT_I")

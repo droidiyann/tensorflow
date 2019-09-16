@@ -29,6 +29,7 @@ limitations under the License.
 #include "tensorflow/core/framework/tensor_shape.h"
 #include "tensorflow/core/framework/tensor_slice.h"
 #include "tensorflow/core/kernels/conv_2d.h"
+#include "tensorflow/core/kernels/cwise_ops.h"
 #include "tensorflow/core/kernels/ops_util.h"
 #include "tensorflow/core/lib/core/errors.h"
 #include "tensorflow/core/lib/strings/strcat.h"
@@ -42,7 +43,7 @@ limitations under the License.
 #if GOOGLE_CUDA
 #include "google/protobuf/duration.pb.h"
 #include "absl/time/time.h"
-#include "cuda/include/cudnn.h"
+#include "third_party/gpus/cudnn/cudnn.h"
 #include "tensorflow/core/kernels/conv_ops_gpu.h"
 #include "tensorflow/core/platform/logger.h"
 #include "tensorflow/core/platform/stream_executor.h"
@@ -90,12 +91,13 @@ struct Int8x4ToInt32<int8> {
 
 template <typename BiasType, typename ScaleType>
 class LaunchFusedConv2DBiasActivationOp<CPUDevice, qint8, BiasType, ScaleType> {
-  using T = qint8;       // conv_input and filter type
-  using TempT = qint32;  // temporary accumulator type for tensor contraction
+  using T = qint8;         // conv_input and filter type
+  using ComputeT = float;  // convert inputs to fp32 for tensor contraction
+  using TempT = float;     // temporary accumulator type for tensor contraction
 
  public:
   void launch(OpKernelContext* ctx, bool cudnn_use_autotune,
-              const Tensor& conv_input, ScaleType conv_input_scale,
+              const Tensor& conv_input, const Tensor& conv_input_scale,
               const Tensor& filter, int32 row_stride, int32 col_stride,
               const Eigen::PaddingType& padding, const Tensor& side_input,
               ScaleType side_input_scale, const Tensor& bias,
@@ -106,7 +108,7 @@ class LaunchFusedConv2DBiasActivationOp<CPUDevice, qint8, BiasType, ScaleType> {
 
     // Output tensor has type T (QInt8), but we can only evaluate Int8 Tensor
     // contraction using 32-bit accumulation (QInt32).
-    Tensor temp_output(DT_QINT32, output->shape());
+    Tensor temp_output(DataTypeToEnum<TempT>::value, output->shape());
 
     constexpr int32 row_dilation = 1;
     constexpr int32 col_dilation = 1;
@@ -132,7 +134,8 @@ class LaunchFusedConv2DBiasActivationOp<CPUDevice, qint8, BiasType, ScaleType> {
       auto in0 = conv_input.shaped<T, 2>({conv_width, filter.dim_size(2)});
       auto in1 = filter.shaped<T, 2>({filter.dim_size(2), filter.dim_size(3)});
 
-      out.device(device) = in0.contract(in1, dim_pair, output_kernel);
+      out.device(device) = in0.cast<ComputeT>().contract(
+          in1.cast<ComputeT>(), dim_pair, output_kernel);
 
     } else if (filter.dim_size(0) == conv_input.dim_size(1) &&
                filter.dim_size(1) == conv_input.dim_size(2) &&
@@ -151,7 +154,8 @@ class LaunchFusedConv2DBiasActivationOp<CPUDevice, qint8, BiasType, ScaleType> {
       auto in0 = conv_input.shaped<T, 2>({conv_input.dim_size(0), k});
       auto in1 = filter.shaped<T, 2>({k, filter.dim_size(3)});
 
-      out.device(device) = in0.contract(in1, dim_pair, output_kernel);
+      out.device(device) = in0.cast<ComputeT>().contract(
+          in1.cast<ComputeT>(), dim_pair, output_kernel);
 
     } else {
       auto out = temp_output.tensor<TempT, 4>();
@@ -159,9 +163,9 @@ class LaunchFusedConv2DBiasActivationOp<CPUDevice, qint8, BiasType, ScaleType> {
       auto in1 = filter.tensor<T, 4>();
 
       // Need to swap row/col when calling Eigen.
-      out.device(device) =
-          Eigen::SpatialConvolution(in0, in1, col_stride, row_stride, padding,
-                                    col_dilation, row_dilation, output_kernel);
+      out.device(device) = Eigen::SpatialConvolution(
+          in0.cast<ComputeT>(), in1.cast<ComputeT>(), col_stride, row_stride,
+          padding, col_dilation, row_dilation, output_kernel);
     }
   }
 
@@ -174,21 +178,22 @@ class LaunchFusedConv2DBiasActivationOp<CPUDevice, qint8, BiasType, ScaleType> {
   // implementation of INT8 cudnnConvolutionBiasActivationForward:
   // https://docs.nvidia.com/deeplearning/sdk/cudnn-developer-guide/index.html#scaling-parameters__fig-conv-bias-activation-forward
   struct BiasActivationOutputKernel {
-    static constexpr int8 kMaxRange = 127;
-    static constexpr int8 kMinRange = -128;
+    static constexpr ScaleType kMaxRange = static_cast<ScaleType>(127.f);
+    static constexpr ScaleType kMinRange = static_cast<ScaleType>(-128.f);
 
-    explicit BiasActivationOutputKernel(ScaleType conv_input_scale,
+    explicit BiasActivationOutputKernel(const Tensor& conv_input_scale,
                                         const Tensor& side_input,
                                         ScaleType side_input_scale,
                                         const Tensor& bias,
                                         ActivationMode activation_mode,
                                         Tensor* output)
         : activation_mode(activation_mode),
-          conv_input_scale(conv_input_scale),
+          conv_input_scale_data(conv_input_scale.flat<ScaleType>().data()),
           bias_data(bias.flat<BiasType>().data()),
           side_input_data(side_input.flat<T>().data()),
           side_input_scale(side_input_scale),
-          output_data(const_cast<T*>(output->flat<T>().data())) {}
+          output_data(const_cast<T*>(output->flat<T>().data())),
+          conv_input_scale_tensor_size(conv_input_scale.NumElements()) {}
 
     EIGEN_ALWAYS_INLINE void operator()(
         const ContractionOutputMapper& conv_output_mapper,
@@ -199,8 +204,6 @@ class LaunchFusedConv2DBiasActivationOp<CPUDevice, qint8, BiasType, ScaleType> {
       const auto stride = conv_output_mapper.stride();
 
       const BiasType* bias_base = bias_data + i;
-      typename TTypes<BiasType>::UnalignedConstTensor bias(bias_base, num_rows);
-
       const T* side_input_base = side_input_data + i + j * stride;
       T* output_base = output_data + i + j * stride;
 
@@ -208,45 +211,63 @@ class LaunchFusedConv2DBiasActivationOp<CPUDevice, qint8, BiasType, ScaleType> {
         // A column of an output tensor after QInt8xQInt8 -> QInt32 contraction.
         // This is a temporary tensor, that we will scale, add bias with
         // side_input, and quantize before writing to final output tensor.
-        typename TTypes<TempT>::UnalignedConstTensor conv_output(
+        typename TTypes<TempT>::UnalignedTensor conv_output(
             &conv_output_mapper(0, col), num_rows);
-
-        // A column of side input tensor corresponding to conv output row.
-        typename TTypes<T>::UnalignedConstTensor side_input(
-            side_input_base + col * stride, num_rows);
 
         // A column of output quantized tensor corresponding to conv output row.
         typename TTypes<T>::UnalignedTensor output(output_base + col * stride,
                                                    num_rows);
 
-        auto conv_output_scaled =
-            conv_output.cast<ScaleType>() * conv_input_scale;
-        auto side_input_scaled =
-            side_input.cast<ScaleType>() * side_input_scale;
+        // Pointers to the input data accounting for the column offset.
+        TempT* conv_output_ptr = conv_output.data();
+        const T* side_input_ptr = side_input_base + col * stride;
+        const BiasType* bias_ptr = bias_base;
 
-        if (activation_mode == ActivationMode::NONE) {
-          output = (conv_output_scaled + bias + side_input_scaled)
-                       .round()
-                       .clip(static_cast<ScaleType>(kMinRange),
-                             static_cast<ScaleType>(kMaxRange))
-                       .template cast<T>();
+        static_assert(
+            std::is_same<TempT, ScaleType>::value,
+            "Temporary contraction result type must match with scale type.");
 
-        } else if (activation_mode == ActivationMode::RELU) {
-          output = (conv_output_scaled + bias + side_input_scaled)
-                       .round()
-                       .clip(0, static_cast<ScaleType>(kMaxRange))
-                       .template cast<T>();
+        // (1) Scale and add bias.
+        // NOTE(ezhulenev): We do not use Eigen expressions for this loop,
+        // because it seems that packet FMA produces slightly different results,
+        // and we are targeting close equality with Nvidia implementation.
+        // We could use std::fmaf, but it can be ~50x slower, on machines
+        // without fma instruction.
+        double conv_input_scale = static_cast<double>(*conv_input_scale_data);
+        for (int idx = 0; idx < num_rows; ++idx) {
+          if (conv_input_scale_tensor_size > 1) {
+            conv_input_scale = static_cast<double>(conv_input_scale_data[idx]);
+          }
+          conv_output_ptr[idx] =
+              static_cast<double>(conv_output_ptr[idx]) * conv_input_scale +
+              static_cast<double>(bias_ptr[idx]);
+          if (side_input_scale != 0.0f) {
+            conv_output_ptr[idx] = static_cast<double>(side_input_ptr[idx]) *
+                                       static_cast<double>(side_input_scale) +
+                                   static_cast<double>(conv_output_ptr[idx]);
+          }
         }
+
+        // (2) Round-up, clip and apply activation function.
+        ScaleType lower_bound =
+            (activation_mode == ActivationMode::NONE ? kMinRange : 0);
+        output =
+            conv_output
+                // scalar_round_op_google uses HALF_TO_EVEN.
+                .unaryExpr(Eigen::internal::scalar_round_op_google<float>())
+                .clip(lower_bound, kMaxRange)
+                .template cast<T>();
       }
     }
 
    private:
     ActivationMode activation_mode;
-    ScaleType conv_input_scale;
+    const ScaleType* conv_input_scale_data;
     const BiasType* bias_data;
     const T* side_input_data;
     ScaleType side_input_scale;
     T* output_data;
+    const int conv_input_scale_tensor_size;
   };
 };
 #endif  // defined(TENSORFLOW_USE_CUSTOM_CONTRACTION_KERNEL)
@@ -386,8 +407,6 @@ class FusedConv2DBiasActivationOp : public OpKernel {
     const Tensor& conv_input_scale_tensor = context->input(kConvInputScale);
     const Tensor& side_input_scale_tensor = context->input(kSideInputScale);
 
-    auto conv_input_scale = *reinterpret_cast<const ScaleType*>(
-        conv_input_scale_tensor.tensor_data().data());
     auto side_input_scale = *reinterpret_cast<const ScaleType*>(
         side_input_scale_tensor.tensor_data().data());
 
@@ -437,10 +456,11 @@ class FusedConv2DBiasActivationOp : public OpKernel {
       return;
     }
 
-    launcher_.launch(context, cudnn_use_autotune_, conv_input, conv_input_scale,
-                     filter, stride_rows_, stride_cols_, eigen_padding_type_,
-                     side_input, side_input_scale, bias, activation_mode_,
-                     data_format_, filter_format_, output);
+    launcher_.launch(context, cudnn_use_autotune_, conv_input,
+                     conv_input_scale_tensor, filter, stride_rows_,
+                     stride_cols_, eigen_padding_type_, side_input,
+                     side_input_scale, bias, activation_mode_, data_format_,
+                     filter_format_, output);
   }
 
  private:
@@ -518,8 +538,10 @@ tensorflow::ComputeCapability GetComputeCapability(
   return cc;
 }
 
-void LogFusedConvAutotuneResults(
-    se::dnn::ConvolutionKind kind, se::dnn::DataType element_type,
+void LogFusedConvForwardAutotuneResults(
+    se::dnn::DataType element_type, se::DeviceMemoryBase input_buffer,
+    se::DeviceMemoryBase filter_buffer, se::DeviceMemoryBase output_buffer,
+    se::DeviceMemoryBase bias_buffer, se::DeviceMemoryBase side_input_buffer,
     const se::dnn::BatchDescriptor& input_desc,
     const se::dnn::FilterDescriptor& filter_desc,
     const se::dnn::BatchDescriptor& output_desc,
@@ -529,7 +551,7 @@ void LogFusedConvAutotuneResults(
   AutotuningLog log;
   {
     ConvolutionProto instr;
-    instr.set_kind(kind);
+    instr.set_kind(se::dnn::ConvolutionKind::FORWARD_BIAS_ACTIVATION);
     *instr.mutable_input() = input_desc.ToProto(element_type);
     *instr.mutable_filter() = filter_desc.ToProto(element_type);
     *instr.mutable_output() = output_desc.ToProto(element_type);
@@ -537,15 +559,29 @@ void LogFusedConvAutotuneResults(
     instr.set_conv_scale(conv_scale);
     instr.set_side_value_scale(side_value_scale);
     instr.set_activation(activation_mode);
+    instr.set_input_address(reinterpret_cast<uint64>(input_buffer.opaque()));
+    instr.set_filter_address(reinterpret_cast<uint64>(filter_buffer.opaque()));
+    instr.set_output_address(reinterpret_cast<uint64>(output_buffer.opaque()));
+    instr.set_bias_address(reinterpret_cast<uint64>(bias_buffer.opaque()));
+    instr.set_side_input_address(
+        reinterpret_cast<uint64>(side_input_buffer.opaque()));
     log.mutable_instr()->PackFrom(std::move(instr));
   }
   *log.mutable_cudnn_version() = GetCudnnVersion(stream_exec);
   *log.mutable_compute_capability() = GetComputeCapability(stream_exec);
   log.set_device_pci_bus_id(stream_exec->GetDeviceDescription().pci_bus_id());
+  {
+    string blas_version;
+    if (auto* blas = stream_exec->AsBlas()) {
+      if (blas->GetVersion(&blas_version).ok()) {
+        log.set_blas_version(blas_version);
+      }
+    }
+  }
   for (const auto& result : results) {
     *log.add_results() = result;
   }
-  Logger::Singleton()->LogProto(log);
+  Logger::GetSingleton()->LogProto(log);
 }
 
 Status BestCudnnConvAlgorithm(absl::Span<const AutotuneResult> results,
@@ -638,7 +674,7 @@ void AdjustPaddingForCudnn(int padding, bool is_int8x4, int filter_size,
 template <typename T, typename BiasType, typename ScaleType>
 void LaunchFusedConv2DBiasActivationOp<GPUDevice, T, BiasType, ScaleType>::
     launch(OpKernelContext* ctx, bool cudnn_use_autotune,
-           const Tensor& conv_input_param, ScaleType conv_input_scale,
+           const Tensor& conv_input_param, const Tensor& conv_input_scale,
            const Tensor& filter_param, int32 row_stride, int32 col_stride,
            const Eigen::PaddingType& padding, const Tensor& side_input_param,
            ScaleType side_input_scale, const Tensor& bias,
@@ -705,7 +741,6 @@ void LaunchFusedConv2DBiasActivationOp<GPUDevice, T, BiasType, ScaleType>::
                           &extra_left_padding, &extra_right_padding);
     if (extra_top_padding != 0 || extra_bottom_padding != 0 ||
         extra_left_padding != 0 || extra_right_padding != 0) {
-      Tensor transformed_input;
       const int new_conv_input_rows =
           conv_input_rows + extra_top_padding + extra_bottom_padding;
       const int new_conv_input_cols =
@@ -919,10 +954,11 @@ void LaunchFusedConv2DBiasActivationOp<GPUDevice, T, BiasType, ScaleType>::
       bool cudnn_launch_status =
           stream
               ->ThenFusedConvolveWithAlgorithm(
-                  conv_input_desc, conv_input_ptr, conv_input_scale,
-                  filter_desc, filter_ptr, conv_desc, side_input_ptr,
-                  side_input_scale, bias_desc, bias_ptr, dnn_activation_mode,
-                  output_desc, &output_ptr, &scratch_allocator,
+                  conv_input_desc, conv_input_ptr,
+                  *conv_input_scale.flat<ScaleType>().data(), filter_desc,
+                  filter_ptr, conv_desc, side_input_ptr, side_input_scale,
+                  bias_desc, bias_ptr, dnn_activation_mode, output_desc,
+                  &output_ptr, &scratch_allocator,
                   dnn::AlgorithmConfig(profile_algorithm), &profile_result)
               .ok();
       if (cudnn_launch_status && profile_result.is_valid()) {
@@ -936,10 +972,11 @@ void LaunchFusedConv2DBiasActivationOp<GPUDevice, T, BiasType, ScaleType>::
             absl::Milliseconds(profile_result.elapsed_time_in_ms()));
       }
     }
-    internal::LogFusedConvAutotuneResults(
-        se::dnn::ConvolutionKind::FORWARD,
-        se::dnn::ToDataType<typename RawType<T>::type>::value, conv_input_desc,
-        filter_desc, output_desc, conv_desc, conv_input_scale, side_input_scale,
+    internal::LogFusedConvForwardAutotuneResults(
+        se::dnn::ToDataType<typename RawType<T>::type>::value, conv_input_ptr,
+        filter_ptr, output_ptr, bias_ptr, side_input_ptr, conv_input_desc,
+        filter_desc, output_desc, conv_desc,
+        *conv_input_scale.flat<ScaleType>().data(), side_input_scale,
         dnn_activation_mode, stream->parent(), results);
     OP_REQUIRES_OK(
         ctx, internal::BestCudnnConvAlgorithm(results, &algorithm_config));
@@ -951,7 +988,8 @@ void LaunchFusedConv2DBiasActivationOp<GPUDevice, T, BiasType, ScaleType>::
   bool cudnn_launch_status =
       stream
           ->ThenFusedConvolveWithAlgorithm(
-              conv_input_desc, conv_input_ptr, conv_input_scale, filter_desc,
+              conv_input_desc, conv_input_ptr,
+              *conv_input_scale.flat<ScaleType>().data(), filter_desc,
               filter_ptr, conv_desc, side_input_ptr, side_input_scale,
               bias_desc, bias_ptr, dnn_activation_mode, output_desc,
               &output_ptr, &scratch_allocator, algorithm_config,

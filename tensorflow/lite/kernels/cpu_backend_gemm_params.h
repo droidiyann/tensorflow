@@ -150,10 +150,6 @@ template <typename AccumScalar, typename DstScalar,
           QuantizationFlavor quantization_flavor>
 void ValidateGemmParams(
     const GemmParams<AccumScalar, DstScalar, quantization_flavor>& params) {
-  // For now require a bias vector. Again, ruy does not rely on that requirement
-  // but the gemmlowp and Eigen path would require more code to handle it,
-  // and currently TFLite only uses the case where there is a bias vector.
-  TFLITE_DCHECK(params.bias);
   // Guard consistency of the quantized multiplier fields.
   if (quantization_flavor == QuantizationFlavor::kFloatingPoint) {
     TFLITE_DCHECK(!params.multiplier_fixedpoint);

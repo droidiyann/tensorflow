@@ -25,6 +25,7 @@ limitations under the License.
 #include "tensorflow/core/common_runtime/process_util.h"
 #include "tensorflow/core/distributed_runtime/worker_cache.h"
 #include "tensorflow/core/distributed_runtime/worker_interface.h"
+#include "tensorflow/core/framework/cancellation.h"
 #include "tensorflow/core/framework/types.h"
 #include "tensorflow/core/lib/core/errors.h"
 #include "tensorflow/core/lib/core/status.h"
@@ -70,16 +71,13 @@ void BaseRendezvousMgr::RecvLocalAsync(int64 step_id,
                                        const Rendezvous::ParsedKey& parsed,
                                        Rendezvous::DoneCallback done) {
   auto rendez = FindOrCreate(step_id);
-  using namespace std::placeholders;
-  Rendezvous::DoneCallback done_cb = std::bind(
-      [rendez](Rendezvous::DoneCallback done,
-               // Begin unbound arguments.
-               const Status& s, const Rendezvous::Args& send_args,
-               const Rendezvous::Args& recv_args, const Tensor& v, bool dead) {
-        rendez->Unref();
-        done(s, send_args, recv_args, v, dead);
-      },
-      std::move(done), _1, _2, _3, _4, _5);
+  auto done_cb = [rendez, done = std::move(done)](
+                     const Status& s, const Rendezvous::Args& send_args,
+                     const Rendezvous::Args& recv_args, const Tensor& v,
+                     bool dead) {
+    rendez->Unref();
+    done(s, send_args, recv_args, v, dead);
+  };
   rendez->RecvLocalAsync(parsed, std::move(done_cb));
 }
 
@@ -147,7 +145,7 @@ BaseRemoteRendezvous::~BaseRemoteRendezvous() {
 // and device name and does no lookups in the worker->device_mgr.
 static bool IsLocalDevice(const StringPiece worker_name,
                           const StringPiece device_name) {
-  return str_util::StartsWith(device_name, worker_name);
+  return absl::StartsWith(device_name, worker_name);
 }
 
 Status BaseRemoteRendezvous::Initialize(WorkerSession* session) {
@@ -176,12 +174,12 @@ Status BaseRemoteRendezvous::Initialize(WorkerSession* session) {
 }
 
 WorkerSession* BaseRemoteRendezvous::session() {
-  mutex_lock l(mu_);
+  tf_shared_lock l(mu_);
   return session_;
 }
 
 bool BaseRemoteRendezvous::is_initialized() {
-  mutex_lock l(mu_);
+  tf_shared_lock l(mu_);
   return is_initialized_locked();
 }
 
@@ -190,7 +188,7 @@ Status BaseRemoteRendezvous::Send(const Rendezvous::ParsedKey& parsed,
                                   const Tensor& val, const bool is_dead) {
   VLOG(1) << "BaseRemoteRendezvous Send " << this << " " << parsed.FullKey();
   {
-    mutex_lock l(mu_);
+    tf_shared_lock l(mu_);
     if (!status_.ok()) return status_;
     DCHECK(is_initialized_locked());
     if (!IsLocalDevice(session_->worker_name, parsed.src_device)) {
@@ -209,7 +207,7 @@ Status BaseRemoteRendezvous::ValidateDevices(const ParsedKey& parsed,
   // (e.g. calling session())
   WorkerSession* sess = nullptr;
   {
-    mutex_lock l(mu_);
+    tf_shared_lock l(mu_);
     if (!status_.ok()) return status_;
     if (!is_initialized_locked()) {
       return errors::Internal("ValidateDevices called before initialization.");
@@ -246,9 +244,11 @@ void BaseRemoteRendezvous::SameWorkerRecvDone(
   // This copy must involve a GPU. Hence, "in" must support DMA
   // (e.g., string tensors do not work on GPU).  Variant copy DMA
   // checks happen inside CopyTensor::ViaDMA.
-  if (!DMAHelper::CanUseDMA(&in) && in.dtype() != DT_VARIANT) {
-    done(errors::InvalidArgument("Non-DMA-safe ", DataTypeString(in.dtype()),
-                                 " tensor may not be copied from/to a GPU."));
+  if (!DMAHelper::CanUseDMA(&in) && in.dtype() != DT_VARIANT &&
+      in.dtype() != DT_RESOURCE) {
+    done(errors::InvalidArgument(
+        "Non-DMA-safe ", DataTypeString(in.dtype()),
+        " tensor may not be copied from/to a device. Key: ", parsed.FullKey()));
     return;
   }
 
@@ -321,6 +321,8 @@ void BaseRemoteRendezvous::RecvAsync(const ParsedKey& parsed,
         [this, parsed, done](
             const Status& status, const Rendezvous::Args& send_args,
             const Rendezvous::Args& recv_args, const Tensor& in, bool is_dead) {
+          VLOG(2) << "RemoteRendezvous Finished Recv " << this << " "
+                  << parsed.FullKey();
           Tensor* out = new Tensor;
           StatusCallback final_callback = [done, send_args, recv_args, out,
                                            is_dead](const Status& s) {
@@ -385,26 +387,53 @@ void BaseRemoteRendezvous::StartAbort(const Status& s) {
     mutex_lock l(mu_);
     if (status_.ok()) {
       status_ = derived_status;
-      for (BaseRecvTensorCall* call : active_) {
-        call->StartAbort(derived_status);
+      for (auto& entry : active_) {
+        entry.first->StartAbort(derived_status);
+        entry.second();
       }
       active_.clear();
     }
   }
 }
 
-void BaseRemoteRendezvous::RegisterCall(BaseRecvTensorCall* call) {
-  mutex_lock l(mu_);
-  if (!status_.ok()) {
-    call->StartAbort(status_);
-  } else {
-    CHECK(active_.insert(call).second);
+void BaseRemoteRendezvous::RegisterCall(BaseRecvTensorCall* call,
+                                        const Rendezvous::Args& args) {
+  CancellationManager* cm = args.cancellation_manager;
+  {
+    mutex_lock l(mu_);
+    if (!status_.ok()) {
+      call->StartAbort(status_);
+      return;
+    }
+    bool already_cancelled = false;
+    InactiveCallback callback = [] {};
+    if (cm != nullptr) {
+      auto token = cm->get_cancellation_token();
+      already_cancelled = !cm->RegisterCallback(token, [this, call] {
+        {
+          mutex_lock l(mu_);
+          if (active_.find(call) == active_.end()) return;
+          call->StartAbort(
+              errors::Cancelled("RecvFromRemoteAsync is cancelled."));
+        }
+      });
+      callback = [cm, token] { cm->TryDeregisterCallback(token); };
+    }
+    if (already_cancelled) {
+      call->StartAbort(errors::Cancelled("RecvFromRemoteAsync is cancelled."));
+    } else {
+      CHECK(active_.emplace(call, callback).second);
+    }
   }
 }
 
 void BaseRemoteRendezvous::DeregisterCall(BaseRecvTensorCall* call) {
   mutex_lock l(mu_);
-  active_.erase(call);
+  auto it = active_.find(call);
+  if (it != active_.end()) {
+    it->second();
+    active_.erase(it);
+  }
 }
 
 BaseRemoteRendezvous::DeferredCall::DeferredCall(const ParsedKey& parsed,

@@ -99,7 +99,7 @@ int32 NumIntraOpThreadsFromEnvironment() {
 
 int32 NumInterOpThreadsFromSessionOptions(const SessionOptions& options) {
   const int32 inter_op = options.config.inter_op_parallelism_threads();
-  if (inter_op != 0) return inter_op;
+  if (inter_op > 0) return inter_op;
 #ifdef INTEL_MKL
   if (!DisableMKL()) {
     // MKL library executes ops in parallel using OMP threads
@@ -139,12 +139,10 @@ void SchedClosure(std::function<void()> closure) {
   uint64 id = tracing::GetUniqueArg();
   tracing::RecordEvent(tracing::EventCategory::kScheduleClosure, id);
 
-  Env::Default()->SchedClosure(std::bind(
-      [id](std::function<void()> closure) {
-        tracing::ScopedRegion region(tracing::EventCategory::kRunClosure, id);
-        closure();
-      },
-      std::move(closure)));
+  Env::Default()->SchedClosure([id, closure = std::move(closure)]() {
+    tracing::ScopedRegion region(tracing::EventCategory::kRunClosure, id);
+    closure();
+  });
 }
 
 void SchedNonBlockingClosureAfter(int64 micros, std::function<void()> closure) {

@@ -1,12 +1,6 @@
 # Description:
 #   TensorFlow Serving session bundle.
 
-package(default_visibility = ["//visibility:public"])
-
-licenses(["notice"])  # Apache 2.0
-
-exports_files(["LICENSE"])
-
 load(
     "//tensorflow:tensorflow.bzl",
     "if_android",
@@ -16,6 +10,15 @@ load(
     "py_test",
     "tf_cc_test",
 )
+load("//tensorflow/core/platform:default/build_config.bzl", "tf_proto_library")
+# Placeholder: load("//tensorflow:tensorflow.bzl", "tf_portable_proto_lib")
+
+package(
+    default_visibility = ["//visibility:public"],
+    licenses = ["notice"],  # Apache 2.0
+)
+
+exports_files(["LICENSE"])
 
 # TODO(b/32673259): add a test to continuously validate these files.
 filegroup(
@@ -300,8 +303,7 @@ cc_library(
     hdrs = ["signature.h"],
     deprecation = "No longer supported. Switch to SavedModel immediately.",
     visibility = ["//visibility:public"],
-    deps = [
-    ] + if_not_mobile([
+    deps = if_not_mobile([
         ":manifest_proto_cc",
         "//tensorflow/core:core_cpu",
         "//tensorflow/core:framework",
@@ -363,8 +365,6 @@ cc_library(
     ],
 )
 
-load("//tensorflow/core:platform/default/build_config.bzl", "tf_proto_library")
-
 cc_library(
     name = "bundle_shim",
     srcs = ["bundle_shim.cc"],
@@ -416,6 +416,3 @@ tf_proto_library(
     cc_api_version = 2,
     visibility = ["//visibility:public"],
 )
-
-# -----------------------------------------------------------------------------
-# Google-internal targets go here (must be at the end).

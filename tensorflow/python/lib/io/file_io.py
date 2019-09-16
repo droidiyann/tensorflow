@@ -399,8 +399,8 @@ def create_dir(dirname):
 
   Args:
     dirname: string, name of the directory to be created
-  Notes: The parent directories need to exist. Use recursive_create_dir instead
-    if there is the possibility that the parent dirs don't exist.
+  Notes: The parent directories need to exist. Use `tf.io.gfile.makedirs`
+    instead if there is the possibility that the parent dirs don't exist.
 
   Raises:
     errors.OpError: If the operation fails.
@@ -414,8 +414,8 @@ def create_dir_v2(path):
 
   Args:
     path: string, name of the directory to be created
-  Notes: The parent directories need to exist. Use recursive_create_dir instead
-    if there is the possibility that the parent dirs don't exist.
+  Notes: The parent directories need to exist. Use `tf.io.gfile.makedirs`
+    instead if there is the possibility that the parent dirs don't exist.
 
   Raises:
     errors.OpError: If the operation fails.
@@ -455,13 +455,13 @@ def recursive_create_dir_v2(path):
 
 @tf_export(v1=["gfile.Copy"])
 def copy(oldpath, newpath, overwrite=False):
-  """Copies data from oldpath to newpath.
+  """Copies data from `oldpath` to `newpath`.
 
   Args:
     oldpath: string, name of the file who's contents need to be copied
     newpath: string, name of the file to which to copy to
-    overwrite: boolean, if false its an error for newpath to be occupied by an
-      existing file.
+    overwrite: boolean, if false it's an error for `newpath` to be occupied by
+      an existing file.
 
   Raises:
     errors.OpError: If the operation fails.
@@ -471,12 +471,12 @@ def copy(oldpath, newpath, overwrite=False):
 
 @tf_export("io.gfile.copy")
 def copy_v2(src, dst, overwrite=False):
-  """Copies data from src to dst.
+  """Copies data from `src` to `dst`.
 
   Args:
     src: string, name of the file whose contents need to be copied
     dst: string, name of the file to which to copy to
-    overwrite: boolean, if false its an error for newpath to be occupied by an
+    overwrite: boolean, if false it's an error for `dst` to be occupied by an
       existing file.
 
   Raises:

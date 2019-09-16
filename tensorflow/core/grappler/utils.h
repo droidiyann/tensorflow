@@ -256,8 +256,20 @@ int NumOutputs(const NodeDef& node, GraphDef* graph);
 // Returns true iff the node has at least one control input.
 bool HasControlInputs(const NodeDef& node);
 
+// Returns true iff the node has at least one regular input.
+bool HasRegularInputs(const NodeDef& node);
+
+// Returns true iff the node has at least one regular output.
+bool HasRegularOutputs(const NodeDef& node, const NodeMap& node_map);
+
+// Returns true iff the node has at least one control output.
+bool HasControlOutputs(const NodeDef& node, const NodeMap& node_map);
+
 // Number of connected non-control inputs.
 int NumNonControlInputs(const NodeDef& node);
+
+// Number of connected control outputs.
+int NumControlOutputs(const NodeDef& node, const NodeMap& node_map);
 
 // Number of connected non-control outputs.
 int NumNonControlOutputs(const NodeDef& node, const NodeMap& node_map);
@@ -298,6 +310,11 @@ void PermuteNodesInPlace(GraphDef* graph, std::vector<int>* permutation,
 
 // Returns Status::OK() if a kernel is registered for node.op() on the device
 // type corresponding to node.device().
+Status IsKernelRegisteredForNode(
+    absl::string_view node_name, bool has_experimental_debug_info,
+    const NodeDef_ExperimentalDebugInfo& experimental_debug_info,
+    absl::string_view node_op, absl::string_view node_device,
+    AttrSlice node_attrs);
 Status IsKernelRegisteredForNode(const NodeDef& node);
 
 Status SetTensorValue(DataType dtype, int value, Tensor* tensor);
