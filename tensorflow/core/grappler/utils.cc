@@ -80,10 +80,12 @@ NodeMap::NodeMap(GraphDef* graph) {
     auto rslt = nodes_.emplace(node_name, node);
     // Check that the graph doesn't contain multiple nodes with the same name.
     if (!rslt.second) {
+      // The first node found with a given name becomes the canonical.
       LOG(WARNING) << "Duplicated node in the graph: " << node_name;
     }
+    NodeDef* canonical = rslt.second ? node : rslt.first->second;
     for (const auto& input : node->input()) {
-      outputs_[NodeName(input)].insert(nodes_[node_name]);
+      outputs_[NodeName(input)].insert(canonical);
     }
   }
 }
@@ -97,6 +99,7 @@ NodeDef* NodeMap::GetNode(const string& name) const {
   const string node_name = NodeName(name);
   auto it = nodes_.find(node_name);
   if (it == nodes_.end()) {
+    VLOG(1) << "Node could not be found: " << name;
     return nullptr;
   }
   return it->second;
@@ -286,7 +289,7 @@ int NumNonControlInputs(const NodeDef& node) {
 bool HasRegularOutputs(const NodeDef& node, const NodeMap& node_map) {
   for (const NodeDef* output : node_map.GetOutputs(node.name())) {
     for (const string& node_as_input : output->input()) {
-      if (IsControlInput(node_as_input)) continue;
+      if (IsControlInput(node_as_input)) break;
 
       TensorId tensor = ParseTensorName(node_as_input);
       if (tensor.node() == node.name()) {

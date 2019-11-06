@@ -344,6 +344,20 @@ bool HloDataflowAnalysis::UpdateBitcastValueSet(HloInstruction* bitcast) {
   return false;
 }
 
+bool HloDataflowAnalysis::UpdateSetDimensionSizeValueSet(
+    HloInstruction* set_dimension_size) {
+  CHECK_EQ(set_dimension_size->opcode(), HloOpcode::kSetDimensionSize);
+  const InstructionValueSet& operand_set =
+      GetInstructionValueSet(set_dimension_size->operand(0));
+  InstructionValueSet& set_dimension_size_set =
+      GetInstructionValueSet(set_dimension_size);
+  if (operand_set != set_dimension_size_set) {
+    set_dimension_size_set = operand_set;
+    return true;
+  }
+  return false;
+}
+
 bool HloDataflowAnalysis::UpdateSendValueSet(HloInstruction* send) {
   CHECK_EQ(send->opcode(), HloOpcode::kSend);
   bool changed = false;
@@ -646,6 +660,8 @@ bool HloDataflowAnalysis::UpdateInstructionValueSet(
       return UpdateAddDependencyValueSet(instruction);
     case HloOpcode::kBitcast:
       return UpdateBitcastValueSet(instruction);
+    case HloOpcode::kSetDimensionSize:
+      return UpdateSetDimensionSizeValueSet(instruction);
     case HloOpcode::kDomain:
       return UpdateDomainValueSet(instruction);
     case HloOpcode::kCopy:
@@ -809,6 +825,7 @@ Status HloDataflowAnalysis::InitializeInstructionValueSets() {
             define_all_values();
           }
           break;
+        case HloOpcode::kSetDimensionSize:
         case HloOpcode::kAddDependency:
         case HloOpcode::kWhile:
         case HloOpcode::kCall:
@@ -1138,7 +1155,7 @@ bool HloDataflowAnalysis::CanShareOperandBufferWithUser(
       user->opcode() == HloOpcode::kWhile) {
     // We eliminated other users in HloOrdering::LiveRangeStrictlyBefore
     // so here we just need to check that the use is at the right operand index.
-    std::vector<int64> operand_indices = user->OperandIndices(operand);
+    const auto operand_indices = user->OperandIndices(operand);
     int64 operand_no = user->opcode() == HloOpcode::kTriangularSolve ? 1 : 0;
     return operand_indices.size() == 1 && operand_indices[0] == operand_no;
   }
@@ -1154,7 +1171,7 @@ bool HloDataflowAnalysis::CanShareOperandBufferWithUser(
     }
     CHECK(!user_index.empty());
     // Only share with the right tuple element buffer.
-    std::vector<int64> operand_indices = user->OperandIndices(operand);
+    const auto operand_indices = user->OperandIndices(operand);
     return operand_indices.size() == 1 && user_index[0] == operand_indices[0];
   }
   if (user->opcode() == HloOpcode::kCall) {

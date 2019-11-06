@@ -14,8 +14,9 @@ This example app uses
 to continuously classify whatever it sees from the device's rear-facing camera.
 The application can run either on device or emulator.
 
-Inference is performed using the TensorFlow Lite Java API. The demo app
-classifies frames in real-time, displaying the top most probable
+Inference is performed using the TensorFlow Lite Java API and the
+[TensorFlow Lite Android Support Library](https://github.com/tensorflow/tensorflow/blob/master/tensorflow/lite/experimental/support/java/README.md).
+The demo app classifies frames in real-time, displaying the top most probable
 classifications. It allows the user to choose between a floating point or
 [quantized](https://www.tensorflow.org/lite/performance/post_training_quantization)
 model, select the thread count, and decide whether to run on CPU, GPU, or via
@@ -134,7 +135,7 @@ bazel build --cxxopt='-std=c++11' -c opt         \
   //tensorflow/lite/java:tensorflow-lite
 ```
 
-This will generate an AAR file in `bazel-genfiles/tensorflow/lite/java/`. Note
+This will generate an AAR file in `bazel-bin/tensorflow/lite/java/`. Note
 that this builds a "fat" AAR with several different architectures; if you don't
 need all of them, use the subset appropriate for your deployment environment.
 From there, there are several approaches you can take to use the .aar in your
@@ -168,7 +169,7 @@ Execute the following command from your root checkout directory:
 
 ```sh
 mvn install:install-file \
-  -Dfile=bazel-genfiles/tensorflow/lite/java/tensorflow-lite.aar \
+  -Dfile=bazel-bin/tensorflow/lite/java/tensorflow-lite.aar \
   -DgroupId=org.tensorflow \
   -DartifactId=tensorflow-lite -Dversion=0.1.100 -Dpackaging=aar
 ```

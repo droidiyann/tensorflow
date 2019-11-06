@@ -38,6 +38,7 @@ tf_cc_test(
         "//tensorflow/core:test_main",
         "//tensorflow/core:testlib",
         "//tensorflow/core/kernels/data:dataset_test_base",
+        "//tensorflow/core/kernels/data:take_dataset_op",
         "//third_party/eigen3",
     ],
 )
@@ -321,7 +322,6 @@ tf_kernel_library(
         "//tensorflow/core:lib",
         "//tensorflow/core:lib_internal",
         "//tensorflow/core:protos_all_cc",
-        "//tensorflow/core/grappler/optimizers/data:rebatch",
         "//tensorflow/core/kernels/data:name_utils",
     ],
 )
@@ -386,6 +386,7 @@ tf_kernel_library(
     deps = [
         "//tensorflow/core:experimental_dataset_ops_op_lib",
         "//tensorflow/core:framework",
+        "//tensorflow/core/kernels/data:dataset_utils",
     ],
 )
 
@@ -410,7 +411,7 @@ tf_kernel_library(
         "//tensorflow/core:lib_internal",
         "//tensorflow/core:protos_all_cc",
         "//tensorflow/core/grappler:graph_view",
-        "//tensorflow/core/kernels/data:rewrite_utils",
+        "//tensorflow/core/kernels/data:dataset_utils",
         "//tensorflow/core/profiler/lib:traceme",
         "@com_google_absl//absl/time",
     ],

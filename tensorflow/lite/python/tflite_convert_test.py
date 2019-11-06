@@ -22,6 +22,7 @@ import os
 import numpy as np
 
 from tensorflow.python import keras
+from tensorflow.python import tf2
 from tensorflow.python.client import session
 from tensorflow.python.eager import def_function
 from tensorflow.python.framework import constant_op
@@ -29,6 +30,7 @@ from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import test_util
 from tensorflow.python.ops import array_ops
+from tensorflow.python.ops import random_ops
 from tensorflow.python.platform import gfile
 from tensorflow.python.platform import resource_loader
 from tensorflow.python.platform import test
@@ -45,7 +47,7 @@ class TestModels(test_util.TensorFlowTestCase):
 
   def _run(self, flags_str, should_succeed):
     output_file = os.path.join(self.get_temp_dir(), 'model.tflite')
-    tflite_bin = resource_loader.get_path_to_datafile('tflite_convert.par')
+    tflite_bin = resource_loader.get_path_to_datafile('tflite_convert')
     cmdline = '{0} --output_file={1} {2}'.format(tflite_bin, output_file,
                                                  flags_str)
 
@@ -54,9 +56,9 @@ class TestModels(test_util.TensorFlowTestCase):
       with gfile.Open(output_file, 'rb') as model_file:
         content = model_file.read()
       self.assertEqual(content is not None, should_succeed)
+      os.remove(output_file)
     else:
       self.assertFalse(should_succeed)
-    os.remove(output_file)
 
   def _getKerasModelFile(self):
     x = np.array([[1.], [2.]])
@@ -76,7 +78,11 @@ class TestModels(test_util.TensorFlowTestCase):
 
 class TfLiteConvertV1Test(TestModels):
 
-  @test_util.run_v1_only('b/138396996, b/139096799')
+  def _run(self, flags_str, should_succeed):
+    if tf2.enabled():
+      flags_str += ' --enable_v1_converter'
+    super(TfLiteConvertV1Test, self)._run(flags_str, should_succeed)
+
   def testFrozenGraphDef(self):
     with ops.Graph().as_default():
       in_tensor = array_ops.placeholder(
@@ -92,6 +98,23 @@ class TfLiteConvertV1Test(TestModels):
     flags_str = ('--graph_def_file={0} --input_arrays={1} '
                  '--output_arrays={2}'.format(graph_def_file,
                                               'Placeholder', 'add'))
+    self._run(flags_str, should_succeed=True)
+    os.remove(graph_def_file)
+
+  def testFrozenGraphDefNonPlaceholder(self):
+    with ops.Graph().as_default():
+      in_tensor = random_ops.random_normal(shape=[1, 16, 16, 3], name='random')
+      _ = in_tensor + in_tensor
+      sess = session.Session()
+
+    # Write graph to file.
+    graph_def_file = self._getFilepath('model.pb')
+    write_graph(sess.graph_def, '', graph_def_file, False)
+    sess.close()
+
+    flags_str = ('--graph_def_file={0} --input_arrays={1} '
+                 '--output_arrays={2}'.format(graph_def_file,
+                                              'random', 'add'))
     self._run(flags_str, should_succeed=True)
     os.remove(graph_def_file)
 
@@ -119,10 +142,34 @@ class TfLiteConvertV1Test(TestModels):
   def testKerasFileMLIR(self):
     keras_file = self._getKerasModelFile()
 
-    flags_str = ('--keras_model_file={} --experimental_enable_mlir_converter'
+    flags_str = ('--keras_model_file={} --experimental_new_converter'
                  .format(keras_file))
     self._run(flags_str, should_succeed=True)
     os.remove(keras_file)
+
+  def testConversionSummary(self):
+    keras_file = self._getKerasModelFile()
+    log_dir = self.get_temp_dir()
+
+    flags_str = ('--keras_model_file={} --experimental_new_converter  '
+                 '--conversion_summary_dir={}'.format(keras_file, log_dir))
+    self._run(flags_str, should_succeed=True)
+    os.remove(keras_file)
+
+    num_items_conversion_summary = len(os.listdir(log_dir))
+    self.assertTrue(num_items_conversion_summary)
+
+  def testConversionSummaryWithOldConverter(self):
+    keras_file = self._getKerasModelFile()
+    log_dir = self.get_temp_dir()
+
+    flags_str = ('--keras_model_file={} '
+                 '--conversion_summary_dir={}'.format(keras_file, log_dir))
+    self._run(flags_str, should_succeed=True)
+    os.remove(keras_file)
+
+    num_items_conversion_summary = len(os.listdir(log_dir))
+    self.assertEqual(num_items_conversion_summary, 0)
 
 
 class TfLiteConvertV2Test(TestModels):
@@ -152,10 +199,18 @@ class TfLiteConvertV2Test(TestModels):
   def testKerasFileMLIR(self):
     keras_file = self._getKerasModelFile()
 
-    flags_str = ('--keras_model_file={} --experimental_enable_mlir_converter'
+    flags_str = ('--keras_model_file={} --experimental_new_converter'
                  .format(keras_file))
     self._run(flags_str, should_succeed=True)
     os.remove(keras_file)
+
+  def testMissingRequired(self):
+    self._run('--invalid_args', should_succeed=False)
+
+  def testMutuallyExclusive(self):
+    self._run(
+        '--keras_model_file=model.h5 --saved_model_dir=/tmp/',
+        should_succeed=False)
 
 
 if __name__ == '__main__':

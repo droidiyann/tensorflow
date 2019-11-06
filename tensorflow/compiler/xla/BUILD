@@ -227,6 +227,8 @@ cc_library(
         ":types",
         ":xla_data_proto",
         "//tensorflow/core:lib",
+        "//tensorflow/core/platform:numbers",
+        "//third_party/eigen3",
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:inlined_vector",
@@ -780,6 +782,16 @@ cc_library(
     ],
 )
 
+tf_cc_test(
+    name = "window_util_test",
+    srcs = ["window_util_test.cc"],
+    deps = [
+        ":test",
+        ":window_util",
+        "//tensorflow/core:test_main",
+    ],
+)
+
 cc_library(
     name = "reference_util",
     srcs = ["reference_util.cc"],
@@ -888,7 +900,6 @@ cc_library(
         [
             ":parse_flags_from_env",
             ":xla_proto",
-            "//tensorflow/compiler/xla/service:hlo",
             "//tensorflow/core:framework_internal",
             "//tensorflow/core:lib",
             "@com_google_absl//absl/container:flat_hash_map",
